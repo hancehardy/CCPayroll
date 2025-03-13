@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block title %}Report Results - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4><i class="fas fa-chart-bar"></i> Payroll Report Results</h4>
+                <a href="{{ url_for('reports') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Reports
+                </a>
+            </div>
+            <div class="card-body">
+                <h5>Pay Periods Analyzed: {{ report.periods_processed|join(', ') }}</h5>
+                
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <h5>1. Total Pay by Employee</h5>
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Employee</th>
+                                        <th>Total Pay</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for employee, pay in report.employee_total_pay.items()|sort(attribute='1', reverse=true) %}
+                                    {% if pay > 0 %}
+                                    <tr>
+                                        <td>{{ employee }}</td>
+                                        <td>${{ "%.2f"|format(pay) }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        {% if report.active_employees %}
+                        <div class="mt-3">
+                            <img src="{{ url_for('static', filename='reports/total_pay_by_employee_' + report_id + '.png') }}" class="img-fluid" alt="Total Pay by Employee">
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                {% if report.periods_processed|length > 1 and report.active_employees %}
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <h5>2. Pay Trend Over Time</h5>
+                        <div class="mt-3">
+                            <img src="{{ url_for('static', filename='reports/pay_trend_over_time_' + report_id + '.png') }}" class="img-fluid" alt="Pay Trend Over Time">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <h5>3. Total Payroll by Period</h5>
+                        <div class="mt-3">
+                            <img src="{{ url_for('static', filename='reports/total_payroll_by_period_' + report_id + '.png') }}" class="img-fluid" alt="Total Payroll by Period">
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <h5>4. Pay Details by Period</h5>
+                        {% for period in report.periods_processed %}
+                        <div class="card mt-3">
+                            <div class="card-header">
+                                {{ period }}
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Employee</th>
+                                                <th>Pay</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for employee in report.active_employees %}
+                                            {% set period_data = report.employee_pay_by_period[employee]|selectattr('period', 'equalto', period)|first %}
+                                            {% if period_data and period_data.pay > 0 %}
+                                            <tr>
+                                                <td>{{ employee }}</td>
+                                                <td>${{ "%.2f"|format(period_data.pay) }}</td>
+                                            </tr>
+                                            {% endif %}
+                                            {% endfor %}
+                                            <tr class="table-secondary">
+                                                <th>Total</th>
+                                                <th>${{ "%.2f"|format(report.period_totals[period].total) }}</th>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

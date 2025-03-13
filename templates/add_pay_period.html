@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block title %}Add Pay Period - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="fas fa-calendar-plus"></i> Add Pay Period</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <div class="mb-3">
+                        <label for="start_date" class="form-label">Start Date</label>
+                        <input type="date" class="form-control" id="start_date" name="start_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="end_date" class="form-label">End Date</label>
+                        <input type="date" class="form-control" id="end_date" name="end_date" required>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('pay_periods') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Pay Periods
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save"></i> Create Pay Period
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+    // Set default dates (current week)
+    document.addEventListener('DOMContentLoaded', function() {
+        const today = new Date();
+        const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        
+        // Calculate the start of the week (Monday)
+        const startDate = new Date(today);
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        startDate.setDate(today.getDate() - daysFromMonday);
+        
+        // Calculate the end of the week (Sunday)
+        const endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
+        
+        // Format dates for input fields (YYYY-MM-DD)
+        document.getElementById('start_date').value = startDate.toISOString().split('T')[0];
+        document.getElementById('end_date').value = endDate.toISOString().split('T')[0];
+    });
+</script>
+{% endblock %}
+{% endblock %} 

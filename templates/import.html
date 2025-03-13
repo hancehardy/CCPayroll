@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+
+{% block title %}Import/Export - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="fas fa-file-import"></i> Import/Export Data</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-file-import"></i> Import from Excel</h5>
+                            </div>
+                            <div class="card-body">
+                                <p>Import payroll data from an Excel file. The system will automatically create pay periods and employees based on the data in the file.</p>
+                                
+                                <form method="post" enctype="multipart/form-data">
+                                    <div class="mb-3">
+                                        <label for="file" class="form-label">Select Excel File</label>
+                                        <input type="file" class="form-control" id="file" name="file" accept=".xlsx, .xls" required>
+                                        <div class="form-text">Only Excel files (.xlsx, .xls) are supported.</div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-file-import"></i> Import Data
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-file-export"></i> Export to Excel</h5>
+                            </div>
+                            <div class="card-body">
+                                <p>Export payroll data for a specific pay period to an Excel file.</p>
+                                
+                                <div class="mb-3">
+                                    <label for="export_period" class="form-label">Select Pay Period to Export</label>
+                                    <select class="form-select" id="export_period">
+                                        {% for period in pay_periods|reverse %}
+                                        <option value="{{ period.id }}">{{ period.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <button type="button" id="export_btn" class="btn btn-primary">
+                                    <i class="fas fa-file-export"></i> Export Data
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle export button click
+        document.getElementById('export_btn').addEventListener('click', function() {
+            const periodId = document.getElementById('export_period').value;
+            if (periodId) {
+                window.location.href = '{{ url_for("export_data", period_id="") }}' + periodId;
+            }
+        });
+    });
+</script>
+{% endblock %} 

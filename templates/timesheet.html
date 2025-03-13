@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+
+{% block title %}Timesheet - {{ period.name }} - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4><i class="fas fa-clock"></i> Timesheet: {{ period.name }}</h4>
+                <div>
+                    <a href="{{ url_for('export_data', period_id=period.id) }}" class="btn btn-info">
+                        <i class="fas fa-file-export"></i> Export to Excel
+                    </a>
+                    <a href="{{ url_for('pay_periods') }}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Pay Periods
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> Enter hours worked or pay amount directly. If hourly rate is set for an employee, pay will be calculated automatically when hours are entered.
+                </div>
+                
+                <div class="timesheet-table">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Employee</th>
+                                {% for day in days %}
+                                <th class="day-header">
+                                    {{ day.day }}<br>
+                                    <small>{{ day.date }}</small>
+                                </th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for employee in employees %}
+                            <tr>
+                                <td class="employee-name">{{ employee.name }}</td>
+                                {% for day in days %}
+                                <td>
+                                    <div class="mb-2">
+                                        <label class="small">Hours</label>
+                                        <input type="number" 
+                                               class="form-control form-control-sm hours-input" 
+                                               data-employee="{{ employee.name }}" 
+                                               data-day="{{ day.date }}" 
+                                               data-field="hours"
+                                               step="0.5" 
+                                               min="0" 
+                                               value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].hours }}{% endif %}">
+                                    </div>
+                                    <div>
+                                        <label class="small">Pay</label>
+                                        <input type="number" 
+                                               class="form-control form-control-sm pay-input" 
+                                               data-employee="{{ employee.name }}" 
+                                               data-day="{{ day.date }}" 
+                                               data-field="pay"
+                                               step="0.01" 
+                                               min="0" 
+                                               value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].pay }}{% endif %}">
+                                    </div>
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle input changes
+        const inputs = document.querySelectorAll('.hours-input, .pay-input');
+        inputs.forEach(input => {
+            input.addEventListener('change', function() {
+                const employee = this.dataset.employee;
+                const day = this.dataset.day;
+                const field = this.dataset.field;
+                const value = this.value;
+                
+                // Send update to server
+                fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        employee: employee,
+                        day: day,
+                        field: field,
+                        value: value
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // If hours were updated and pay was calculated, update the pay field
+                        if (field === 'hours') {
+                            const payInput = document.querySelector(`.pay-input[data-employee="${employee}"][data-day="${day}"]`);
+                            if (payInput && data.pay) {
+                                payInput.value = data.pay;
+                            }
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error updating timesheet:', error);
+                });
+            });
+        });
+    });
+</script>
+{% endblock %} 

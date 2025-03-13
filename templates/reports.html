@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+
+{% block title %}Reports - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="fas fa-chart-bar"></i> Payroll Reports</h4>
+            </div>
+            <div class="card-body">
+                <p class="lead">Generate payroll reports and visualizations to analyze employee pay data.</p>
+                
+                <form action="{{ url_for('generate_report_route') }}" method="post">
+                    <div class="mb-3">
+                        <label for="period_id" class="form-label">Select Pay Period</label>
+                        <select class="form-select" id="period_id" name="period_id" required>
+                            <option value="all">All Pay Periods</option>
+                            {% for period in pay_periods|reverse %}
+                            <option value="{{ period.id }}">{{ period.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-chart-line"></i> Generate Report
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Employee - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="fas fa-user-edit"></i> Edit Employee</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Employee Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required value="{{ employee.name }}">
+                        <div class="form-text">Enter the employee's name in ALL CAPS.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="rate" class="form-label">Hourly Rate</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="rate" name="rate" step="0.01" min="0" value="{{ employee.rate }}">
+                            <span class="input-group-text">/hour</span>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('employees') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Employees
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Update Employee
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

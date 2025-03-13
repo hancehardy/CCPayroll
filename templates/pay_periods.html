@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block title %}Pay Periods - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4><i class="fas fa-calendar-alt"></i> Pay Periods</h4>
+                <a href="{{ url_for('add_pay_period') }}" class="btn btn-success">
+                    <i class="fas fa-plus"></i> Add Pay Period
+                </a>
+            </div>
+            <div class="card-body">
+                {% if pay_periods %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Pay Period</th>
+                                <th>Start Date</th>
+                                <th>End Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for period in pay_periods|reverse %}
+                            <tr>
+                                <td>{{ period.name }}</td>
+                                <td>{{ period.start_date }}</td>
+                                <td>{{ period.end_date }}</td>
+                                <td>
+                                    <a href="{{ url_for('timesheet', period_id=period.id) }}" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-edit"></i> Edit Timesheet
+                                    </a>
+                                    <a href="{{ url_for('export_data', period_id=period.id) }}" class="btn btn-sm btn-info">
+                                        <i class="fas fa-file-export"></i> Export
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ period.id }}">
+                                        <i class="fas fa-trash"></i> Delete
+                                    </button>
+                                    
+                                    <!-- Delete Modal -->
+                                    <div class="modal fade" id="deleteModal{{ period.id }}" tabindex="-1" aria-hidden="true">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content">
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title">Confirm Delete</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    Are you sure you want to delete pay period <strong>{{ period.name }}</strong>?
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                    <form action="{{ url_for('delete_pay_period', period_id=period.id) }}" method="post">
+                                                        <button type="submit" class="btn btn-danger">Delete</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    No pay periods found. <a href="{{ url_for('add_pay_period') }}">Add a pay period</a> to get started.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
