@@ -389,9 +389,21 @@ def timesheet(period_id):
         })
         current_date += timedelta(days=1)
     
+    # Group employees by install crew
+    crews = {}
+    for employee in employees:
+        crew_num = employee.get('install_crew', 0)
+        if crew_num not in crews:
+            crews[crew_num] = []
+        crews[crew_num].append(employee)
+    
+    # Sort crews by number
+    sorted_crews = sorted(crews.items())
+    
     return render_template('timesheet.html', 
                           period=period, 
-                          employees=employees, 
+                          employees=employees,
+                          crews=sorted_crews,
                           timesheet=timesheet_data, 
                           days=days)
 
@@ -417,7 +429,10 @@ def update_timesheet(period_id):
         timesheet_data[employee][day] = {
             'day': day_name,
             'hours': '',
-            'pay': ''
+            'pay': '',
+            'project_name': '',
+            'install_days': '',
+            'install': ''
         }
     
     # Update field
@@ -628,26 +643,102 @@ def export_data(period_id):
         return redirect(url_for('pay_periods'))
     
     timesheet_data = get_timesheet(period_id)
+    employees = get_employees()
+    
+    # Group employees by install crew
+    crews = {}
+    for employee in employees:
+        crew_num = employee.get('install_crew', 0)
+        if crew_num not in crews:
+            crews[crew_num] = []
+        crews[crew_num].append(employee)
+    
+    # Sort crews by number
+    sorted_crews = sorted(crews.items())
     
     # Create a DataFrame for export
     data = []
     
-    for employee, days in timesheet_data.items():
-        # Add employee name
-        row = [employee]
-        data.append(row)
+    # Add title
+    data.append(['CREATIVE CLOSETS PAYROLL TIME SHEET'])
+    data.append([])  # Empty row
+    
+    # Process each crew
+    for crew_num, crew_employees in sorted_crews:
+        if crew_num > 0:  # Only process install crews
+            data.append([f'INSTALL CREW # {crew_num}'])
+            
+            for employee in crew_employees:
+                # Add employee name
+                data.append([employee['name']])
+                
+                # Add header row
+                header = ['DAY', 'DATE', 'PROJECT NAME', 'DAYS', 'INSTALL', 'HOURS', 'PAY']
+                data.append(header)
+                
+                # Add days
+                total_pay = 0
+                for day, day_data in sorted(timesheet_data.get(employee['name'], {}).items()):
+                    day_row = [
+                        day_data.get('day', ''),
+                        day,
+                        day_data.get('project_name', ''),
+                        day_data.get('install_days', ''),
+                        day_data.get('install', ''),
+                        day_data.get('hours', ''),
+                        day_data.get('pay', '')
+                    ]
+                    data.append(day_row)
+                    
+                    # Calculate total pay
+                    if day_data.get('pay'):
+                        try:
+                            total_pay += float(day_data['pay'])
+                        except (ValueError, TypeError):
+                            pass
+                
+                # Add total row
+                data.append(['', '', '', '', '', 'TOTAL', f'${total_pay:.2f}'])
+                
+                # Add empty row
+                data.append([])
+    
+    # Process non-crew employees
+    if 0 in crews:
+        data.append(['OTHER EMPLOYEES'])
         
-        # Add header row
-        header = ['DAY', '', 'DATE', '', '', '', '', '', '', '', '', '', '', 'PAY']
-        data.append(header)
-        
-        # Add days
-        for day, day_data in sorted(days.items()):
-            day_row = [day_data['day'], '', day, '', '', '', '', '', '', '', '', '', '', day_data['pay']]
-            data.append(day_row)
-        
-        # Add empty row
-        data.append([''] * 14)
+        for employee in crews[0]:
+            # Add employee name
+            data.append([employee['name']])
+            
+            # Add header row
+            header = ['DAY', 'DATE', 'PROJECT NAME', 'HOURS', 'PAY']
+            data.append(header)
+            
+            # Add days
+            total_pay = 0
+            for day, day_data in sorted(timesheet_data.get(employee['name'], {}).items()):
+                day_row = [
+                    day_data.get('day', ''),
+                    day,
+                    day_data.get('project_name', ''),
+                    day_data.get('hours', ''),
+                    day_data.get('pay', '')
+                ]
+                data.append(day_row)
+                
+                # Calculate total pay
+                if day_data.get('pay'):
+                    try:
+                        total_pay += float(day_data['pay'])
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Add total row
+            data.append(['', '', '', 'TOTAL', f'${total_pay:.2f}'])
+            
+            # Add empty row
+            data.append([])
     
     # Create DataFrame
     df = pd.DataFrame(data)

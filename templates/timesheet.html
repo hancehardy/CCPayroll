@@ -22,54 +22,173 @@
                     <i class="fas fa-info-circle"></i> Enter hours worked or pay amount directly. If hourly rate is set for an employee, pay will be calculated automatically when hours are entered.
                 </div>
                 
-                <div class="timesheet-table">
-                    <table class="table table-bordered">
-                        <thead>
-                            <tr>
-                                <th>Employee</th>
-                                {% for day in days %}
-                                <th class="day-header">
-                                    {{ day.day }}<br>
-                                    <small>{{ day.date }}</small>
-                                </th>
-                                {% endfor %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for employee in employees %}
-                            <tr>
-                                <td class="employee-name">{{ employee.name }}</td>
-                                {% for day in days %}
-                                <td>
-                                    <div class="mb-2">
-                                        <label class="small">Hours</label>
-                                        <input type="number" 
-                                               class="form-control form-control-sm hours-input" 
-                                               data-employee="{{ employee.name }}" 
-                                               data-day="{{ day.date }}" 
-                                               data-field="hours"
-                                               step="0.5" 
-                                               min="0" 
-                                               value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].hours }}{% endif %}">
+                <h1 class="text-center mb-4">CREATIVE CLOSETS PAYROLL TIME SHEET</h1>
+                
+                {% for crew_num, crew_employees in crews %}
+                    {% if crew_num > 0 %}
+                        <div class="crew-section mb-5">
+                            <h3 class="bg-dark text-white p-2">INSTALL CREW # {{ crew_num }}</h3>
+                            
+                            {% for employee in crew_employees %}
+                                <div class="employee-timesheet mb-4">
+                                    <h4 class="bg-secondary text-white p-2">{{ employee.name }}</h4>
+                                    
+                                    <div class="table-responsive">
+                                        <table class="table table-bordered">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>DAY</th>
+                                                    <th>DATE</th>
+                                                    <th>PROJECT NAME</th>
+                                                    <th>DAYS</th>
+                                                    <th>INSTALL</th>
+                                                    <th>HOURS</th>
+                                                    <th>PAY</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for day in days %}
+                                                <tr>
+                                                    <td>{{ day.day }}</td>
+                                                    <td>{{ day.date }}</td>
+                                                    <td>
+                                                        <input type="text" 
+                                                               class="form-control form-control-sm project-input" 
+                                                               data-employee="{{ employee.name }}" 
+                                                               data-day="{{ day.date }}" 
+                                                               data-field="project_name"
+                                                               value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].project_name }}{% endif %}">
+                                                    </td>
+                                                    <td>
+                                                        <input type="text" 
+                                                               class="form-control form-control-sm install-days-input" 
+                                                               data-employee="{{ employee.name }}" 
+                                                               data-day="{{ day.date }}" 
+                                                               data-field="install_days"
+                                                               value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].install_days }}{% endif %}">
+                                                    </td>
+                                                    <td>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text">$</span>
+                                                            <input type="number" 
+                                                                   class="form-control form-control-sm install-input" 
+                                                                   data-employee="{{ employee.name }}" 
+                                                                   data-day="{{ day.date }}" 
+                                                                   data-field="install"
+                                                                   step="0.01" 
+                                                                   min="0" 
+                                                                   value="{% if employee.name in timesheet and day.date in timesheet[employee.name] and timesheet[employee.name][day.date].install %}{{ timesheet[employee.name][day.date].install }}{% endif %}">
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <input type="number" 
+                                                               class="form-control form-control-sm hours-input" 
+                                                               data-employee="{{ employee.name }}" 
+                                                               data-day="{{ day.date }}" 
+                                                               data-field="hours"
+                                                               step="0.5" 
+                                                               min="0" 
+                                                               value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].hours }}{% endif %}">
+                                                    </td>
+                                                    <td>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text">$</span>
+                                                            <input type="number" 
+                                                                   class="form-control form-control-sm pay-input" 
+                                                                   data-employee="{{ employee.name }}" 
+                                                                   data-day="{{ day.date }}" 
+                                                                   data-field="pay"
+                                                                   step="0.01" 
+                                                                   min="0" 
+                                                                   value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].pay }}{% endif %}">
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                                <tr>
+                                                    <td colspan="5" class="text-end fw-bold">TOTAL</td>
+                                                    <td class="employee-hours-total"></td>
+                                                    <td class="employee-pay-total"></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </div>
-                                    <div>
-                                        <label class="small">Pay</label>
-                                        <input type="number" 
-                                               class="form-control form-control-sm pay-input" 
-                                               data-employee="{{ employee.name }}" 
-                                               data-day="{{ day.date }}" 
-                                               data-field="pay"
-                                               step="0.01" 
-                                               min="0" 
-                                               value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].pay }}{% endif %}">
-                                    </div>
-                                </td>
-                                {% endfor %}
-                            </tr>
+                                </div>
                             {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+                
+                <!-- Non-crew employees -->
+                {% if 0 in dict(crews) and dict(crews)[0] %}
+                    <div class="non-crew-section mb-5">
+                        <h3 class="bg-dark text-white p-2">OTHER EMPLOYEES</h3>
+                        
+                        {% for employee in dict(crews)[0] %}
+                            <div class="employee-timesheet mb-4">
+                                <h4 class="bg-secondary text-white p-2">{{ employee.name }}</h4>
+                                
+                                <div class="table-responsive">
+                                    <table class="table table-bordered">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>DAY</th>
+                                                <th>DATE</th>
+                                                <th>PROJECT NAME</th>
+                                                <th>HOURS</th>
+                                                <th>PAY</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for day in days %}
+                                            <tr>
+                                                <td>{{ day.day }}</td>
+                                                <td>{{ day.date }}</td>
+                                                <td>
+                                                    <input type="text" 
+                                                           class="form-control form-control-sm project-input" 
+                                                           data-employee="{{ employee.name }}" 
+                                                           data-day="{{ day.date }}" 
+                                                           data-field="project_name"
+                                                           value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].project_name }}{% endif %}">
+                                                </td>
+                                                <td>
+                                                    <input type="number" 
+                                                           class="form-control form-control-sm hours-input" 
+                                                           data-employee="{{ employee.name }}" 
+                                                           data-day="{{ day.date }}" 
+                                                           data-field="hours"
+                                                           step="0.5" 
+                                                           min="0" 
+                                                           value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].hours }}{% endif %}">
+                                                </td>
+                                                <td>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text">$</span>
+                                                        <input type="number" 
+                                                               class="form-control form-control-sm pay-input" 
+                                                               data-employee="{{ employee.name }}" 
+                                                               data-day="{{ day.date }}" 
+                                                               data-field="pay"
+                                                               step="0.01" 
+                                                               min="0" 
+                                                               value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].pay }}{% endif %}">
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                            <tr>
+                                                <td colspan="3" class="text-end fw-bold">TOTAL</td>
+                                                <td class="employee-hours-total"></td>
+                                                <td class="employee-pay-total"></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -80,7 +199,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Handle input changes
-        const inputs = document.querySelectorAll('.hours-input, .pay-input');
+        const inputs = document.querySelectorAll('.hours-input, .pay-input, .project-input, .install-days-input, .install-input');
         inputs.forEach(input => {
             input.addEventListener('change', function() {
                 const employee = this.dataset.employee;
@@ -111,6 +230,9 @@
                                 payInput.value = data.pay;
                             }
                         }
+                        
+                        // Calculate totals
+                        calculateTotals();
                     }
                 })
                 .catch(error => {
@@ -118,6 +240,45 @@
                 });
             });
         });
+        
+        // Calculate totals on page load
+        calculateTotals();
+        
+        // Function to calculate totals for each employee
+        function calculateTotals() {
+            const employeeTables = document.querySelectorAll('.employee-timesheet');
+            
+            employeeTables.forEach(table => {
+                const hoursInputs = table.querySelectorAll('.hours-input');
+                const payInputs = table.querySelectorAll('.pay-input');
+                
+                let totalHours = 0;
+                let totalPay = 0;
+                
+                hoursInputs.forEach(input => {
+                    if (input.value) {
+                        totalHours += parseFloat(input.value);
+                    }
+                });
+                
+                payInputs.forEach(input => {
+                    if (input.value) {
+                        totalPay += parseFloat(input.value);
+                    }
+                });
+                
+                const hoursTotal = table.querySelector('.employee-hours-total');
+                const payTotal = table.querySelector('.employee-pay-total');
+                
+                if (hoursTotal) {
+                    hoursTotal.textContent = totalHours.toFixed(1);
+                }
+                
+                if (payTotal) {
+                    payTotal.textContent = '$' + totalPay.toFixed(2);
+                }
+            });
+        }
     });
 </script>
 {% endblock %} 
