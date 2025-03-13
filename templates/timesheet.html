@@ -26,11 +26,14 @@
                 
                 {% for crew_num, crew_employees in crews %}
                     {% if crew_num > 0 %}
-                        <div class="crew-section mb-5">
+                        <div class="crew-section mb-5" data-crew="{{ crew_num }}">
                             <h3 class="bg-dark text-white p-2">INSTALL CREW # {{ crew_num }}</h3>
                             
                             {% for employee in crew_employees %}
-                                <div class="employee-timesheet mb-4">
+                                <div class="employee-timesheet mb-4" 
+                                     data-employee="{{ employee.name }}" 
+                                     data-role="{{ employee.installer_role }}" 
+                                     data-crew="{{ crew_num }}">
                                     <h4 class="bg-secondary text-white p-2">{{ employee.name }}</h4>
                                     
                                     <div class="table-responsive">
@@ -48,7 +51,7 @@
                                             </thead>
                                             <tbody>
                                                 {% for day in days %}
-                                                <tr>
+                                                <tr data-date="{{ day.date }}">
                                                     <td>{{ day.day }}</td>
                                                     <td>{{ day.date }}</td>
                                                     <td>
@@ -231,6 +234,11 @@
                             }
                         }
                         
+                        // If project name or install days were updated by a lead installer, update assistant installers
+                        if ((field === 'project_name' || field === 'install_days') && isLeadInstaller(employee)) {
+                            copyToAssistantInstallers(employee, day, field, value);
+                        }
+                        
                         // Calculate totals
                         calculateTotals();
                     }
@@ -240,6 +248,38 @@
                 });
             });
         });
+        
+        // Function to check if an employee is a lead installer
+        function isLeadInstaller(employeeName) {
+            const employeeDiv = document.querySelector(`.employee-timesheet[data-employee="${employeeName}"]`);
+            return employeeDiv && employeeDiv.dataset.role === 'lead';
+        }
+        
+        // Function to copy project name or install days from lead installer to assistant installers
+        function copyToAssistantInstallers(leadEmployeeName, day, field, value) {
+            const leadEmployeeDiv = document.querySelector(`.employee-timesheet[data-employee="${leadEmployeeName}"]`);
+            if (!leadEmployeeDiv) return;
+            
+            const crewNumber = leadEmployeeDiv.dataset.crew;
+            if (!crewNumber) return;
+            
+            // Find all assistant installers in the same crew
+            const assistantInstallers = document.querySelectorAll(`.employee-timesheet[data-crew="${crewNumber}"][data-role="assistant"]`);
+            
+            assistantInstallers.forEach(assistantDiv => {
+                const assistantName = assistantDiv.dataset.employee;
+                const assistantInput = assistantDiv.querySelector(`[data-field="${field}"][data-day="${day}"]`);
+                
+                if (assistantInput) {
+                    // Update the input value
+                    assistantInput.value = value;
+                    
+                    // Trigger the change event to save to server
+                    const changeEvent = new Event('change', { bubbles: true });
+                    assistantInput.dispatchEvent(changeEvent);
+                }
+            });
+        }
         
         // Calculate totals on page load
         calculateTotals();
