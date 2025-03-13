@@ -200,6 +200,14 @@ def add_employee():
     if request.method == 'POST':
         name = request.form.get('name')
         rate = request.form.get('rate')
+        install_crew = request.form.get('install_crew', '0')
+        installer_role = request.form.get('installer_role', 'none')
+        
+        # Convert install_crew to integer
+        try:
+            install_crew = int(install_crew)
+        except (ValueError, TypeError):
+            install_crew = 0
         
         if not name:
             flash('Employee name is required', 'danger')
@@ -216,7 +224,9 @@ def add_employee():
         employees.append({
             'id': str(uuid.uuid4()),
             'name': name,
-            'rate': rate
+            'rate': rate,
+            'install_crew': install_crew,
+            'installer_role': installer_role
         })
         
         save_employees(employees)
@@ -237,6 +247,14 @@ def edit_employee(employee_id):
     if request.method == 'POST':
         name = request.form.get('name')
         rate = request.form.get('rate')
+        install_crew = request.form.get('install_crew', '0')
+        installer_role = request.form.get('installer_role', 'none')
+        
+        # Convert install_crew to integer
+        try:
+            install_crew = int(install_crew)
+        except (ValueError, TypeError):
+            install_crew = 0
         
         if not name:
             flash('Employee name is required', 'danger')
@@ -245,6 +263,8 @@ def edit_employee(employee_id):
         # Update employee
         employee['name'] = name
         employee['rate'] = rate
+        employee['install_crew'] = install_crew
+        employee['installer_role'] = installer_role
         
         save_employees(employees)
         flash('Employee updated successfully', 'success')
@@ -519,7 +539,9 @@ def import_data():
                             employees.append({
                                 'id': str(uuid.uuid4()),
                                 'name': emp_name,
-                                'rate': ''
+                                'rate': '',
+                                'install_crew': 0,
+                                'installer_role': 'none'
                             })
                     
                     save_employees(employees)
@@ -642,17 +664,23 @@ if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
         {
             'id': str(uuid.uuid4()),
             'name': 'VICTOR LAZO',
-            'rate': '20'
+            'rate': '20',
+            'install_crew': 1,
+            'installer_role': 'lead'
         },
         {
             'id': str(uuid.uuid4()),
             'name': 'SAMUEL CASTILLO',
-            'rate': '18'
+            'rate': '18',
+            'install_crew': 1,
+            'installer_role': 'assistant'
         },
         {
             'id': str(uuid.uuid4()),
             'name': 'JOSE MEDINA',
-            'rate': '22'
+            'rate': '22',
+            'install_crew': 0,
+            'installer_role': 'none'
         }
     ]
     save_employees(sample_employees)

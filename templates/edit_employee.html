@@ -24,6 +24,20 @@
                             <span class="input-group-text">/hour</span>
                         </div>
                     </div>
+                    <div class="mb-3">
+                        <label for="install_crew" class="form-label">Install Crew Number</label>
+                        <input type="number" class="form-control" id="install_crew" name="install_crew" min="0" value="{{ employee.install_crew|default(0) }}" placeholder="Enter crew number (0 for none)">
+                        <div class="form-text">Enter the crew number this employee belongs to (0 if not part of any install crew).</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="installer_role" class="form-label">Installer Role</label>
+                        <select class="form-select" id="installer_role" name="installer_role">
+                            <option value="none" {% if employee.installer_role == 'none' or not employee.installer_role %}selected{% endif %}>Not an Installer</option>
+                            <option value="lead" {% if employee.installer_role == 'lead' %}selected{% endif %}>Lead Installer</option>
+                            <option value="assistant" {% if employee.installer_role == 'assistant' %}selected{% endif %}>Assistant Installer</option>
+                        </select>
+                        <div class="form-text">Select the installer role for this employee.</div>
+                    </div>
                     <div class="d-flex justify-content-between">
                         <a href="{{ url_for('employees') }}" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Back to Employees

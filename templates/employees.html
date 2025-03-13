@@ -20,6 +20,8 @@
                             <tr>
                                 <th>Name</th>
                                 <th>Hourly Rate</th>
+                                <th>Install Crew</th>
+                                <th>Installer Role</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -28,6 +30,22 @@
                             <tr>
                                 <td>{{ employee.name }}</td>
                                 <td>{% if employee.rate %}${{ employee.rate }}/hour{% else %}Not set{% endif %}</td>
+                                <td>
+                                    {% if employee.install_crew and employee.install_crew|int > 0 %}
+                                        <span class="badge bg-success">Crew #{{ employee.install_crew }}</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">None</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if employee.installer_role == 'lead' %}
+                                        <span class="badge bg-primary">Lead Installer</span>
+                                    {% elif employee.installer_role == 'assistant' %}
+                                        <span class="badge bg-info">Assistant Installer</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Not an Installer</span>
+                                    {% endif %}
+                                </td>
                                 <td>
                                     <a href="{{ url_for('edit_employee', employee_id=employee.id) }}" class="btn btn-sm btn-primary">
                                         <i class="fas fa-edit"></i> Edit
