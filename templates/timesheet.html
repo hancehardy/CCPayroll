@@ -46,6 +46,7 @@
                                                     <th>DAYS</th>
                                                     {% if employee.installer_role != 'assistant' %}
                                                     <th>INSTALL</th>
+                                                    <th>ASST PAY</th>
                                                     {% endif %}
                                                     <th>HOURS</th>
                                                     <th>PAY</th>
@@ -86,6 +87,13 @@
                                                                    value="{% if employee.name in timesheet and day.date in timesheet[employee.name] and timesheet[employee.name][day.date].install %}{{ timesheet[employee.name][day.date].install }}{% endif %}">
                                                         </div>
                                                     </td>
+                                                    <td>
+                                                        <div class="assistant-pay-display" 
+                                                             data-crew="{{ crew_num }}" 
+                                                             data-day="{{ day.date }}">
+                                                            $0.00
+                                                        </div>
+                                                    </td>
                                                     {% endif %}
                                                     <td>
                                                         <input type="number" 
@@ -113,7 +121,7 @@
                                                 </tr>
                                                 {% endfor %}
                                                 <tr>
-                                                    <td colspan="{% if employee.installer_role != 'assistant' %}5{% else %}4{% endif %}" class="text-end fw-bold">TOTAL</td>
+                                                    <td colspan="{% if employee.installer_role != 'assistant' %}6{% else %}4{% endif %}" class="text-end fw-bold">TOTAL</td>
                                                     <td class="employee-hours-total"></td>
                                                     <td class="employee-pay-total"></td>
                                                 </tr>
@@ -245,6 +253,9 @@
                         
                         // Calculate totals
                         calculateTotals();
+                        
+                        // Update assistant pay display in lead installer sections
+                        updateAssistantPayDisplay();
                     }
                 })
                 .catch(error => {
@@ -285,8 +296,45 @@
             });
         }
         
+        // Function to update assistant pay display in lead installer sections
+        function updateAssistantPayDisplay() {
+            // For each crew
+            const crews = document.querySelectorAll('.crew-section');
+            crews.forEach(crew => {
+                const crewNum = crew.dataset.crew;
+                
+                // For each day in the timesheet
+                const allDays = crew.querySelectorAll('[data-date]');
+                const uniqueDays = new Set();
+                allDays.forEach(day => uniqueDays.add(day.dataset.date));
+                
+                uniqueDays.forEach(dayDate => {
+                    // Find all assistant installers in this crew
+                    const assistantInstallers = crew.querySelectorAll(`.employee-timesheet[data-role="assistant"]`);
+                    let totalAssistantPay = 0;
+                    
+                    // Sum up the pay for all assistant installers for this day
+                    assistantInstallers.forEach(assistant => {
+                        const payInput = assistant.querySelector(`.pay-input[data-day="${dayDate}"]`);
+                        if (payInput && payInput.value) {
+                            totalAssistantPay += parseFloat(payInput.value);
+                        }
+                    });
+                    
+                    // Update the assistant pay display in lead installer row
+                    const assistantPayDisplays = crew.querySelectorAll(`.assistant-pay-display[data-day="${dayDate}"]`);
+                    assistantPayDisplays.forEach(display => {
+                        display.textContent = '$' + totalAssistantPay.toFixed(2);
+                    });
+                });
+            });
+        }
+        
         // Calculate totals on page load
         calculateTotals();
+        
+        // Update assistant pay display on page load
+        updateAssistantPayDisplay();
         
         // Function to calculate totals for each employee
         function calculateTotals() {
