@@ -316,15 +316,18 @@
                 assistantPayValue = parseFloat(assistantPayText) || 0;
             }
             
-            // Condition 1: If install field has a value, pay = install - assistant pay
+            let newPayValue = 0;
+            
+            // Component 1: If install field has a value, add (install - assistant pay)
             if (installInput && installInput.value) {
                 const installValue = parseFloat(installInput.value) || 0;
-                const newPayValue = Math.max(0, installValue - assistantPayValue);
-                
-                // Update the pay field
-                payInput.value = newPayValue.toFixed(2);
-                
-                // Send update to server
+                const installComponent = Math.max(0, installValue - assistantPayValue);
+                newPayValue += installComponent;
+            }
+            
+            // Component 2: If hours field has a value, we need to get the hourly rate calculation from server
+            if (hoursInput && hoursInput.value && parseFloat(hoursInput.value) > 0) {
+                // We'll make a special request to calculate the hourly pay component
                 fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
                     method: 'POST',
                     headers: {
@@ -333,17 +336,61 @@
                     body: JSON.stringify({
                         employee: leadName,
                         day: day,
-                        field: 'pay',
-                        value: newPayValue.toFixed(2)
+                        field: 'hours',
+                        value: hoursInput.value,
+                        calculate_only: true // Flag to indicate we only want the calculation
                     }),
                 })
                 .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.pay) {
+                        // Add the hourly component to the install component
+                        const hourlyComponent = parseFloat(data.pay);
+                        const totalPay = newPayValue + hourlyComponent;
+                        
+                        // Update the pay field
+                        payInput.value = totalPay.toFixed(2);
+                        
+                        // Send the final total update to server
+                        updatePayValueOnServer(leadName, day, totalPay.toFixed(2));
+                    }
+                })
                 .catch(error => {
-                    console.error('Error updating pay:', error);
+                    console.error('Error calculating hourly pay:', error);
                 });
-            } 
-            // Condition 2: If hours field has a value, let the server calculate pay (hourly rate * hours)
-            // This is already handled by the server when the hours field changes
+            } else {
+                // No hours component, just update with the install component
+                payInput.value = newPayValue.toFixed(2);
+                
+                // Send update to server
+                updatePayValueOnServer(leadName, day, newPayValue.toFixed(2));
+            }
+        }
+        
+        // Helper function to update pay value on server
+        function updatePayValueOnServer(employeeName, day, payValue) {
+            fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    employee: employeeName,
+                    day: day,
+                    field: 'pay',
+                    value: payValue
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Update totals after pay is updated
+                if (data.success) {
+                    calculateTotals();
+                }
+            })
+            .catch(error => {
+                console.error('Error updating pay:', error);
+            });
         }
         
         // Function to copy project name or install days from lead installer to assistant installers

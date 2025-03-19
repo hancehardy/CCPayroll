@@ -409,52 +409,65 @@ def timesheet(period_id):
 
 @app.route('/timesheet/<period_id>/update', methods=['POST'])
 def update_timesheet(period_id):
-    data = request.json
-    timesheet_data = get_timesheet(period_id)
-    
-    employee = data.get('employee')
-    day = data.get('day')
-    field = data.get('field')
-    value = data.get('value')
-    
-    if not all([employee, day, field]):
-        return jsonify({'success': False, 'message': 'Missing required fields'})
-    
-    # Initialize if not exists
-    if employee not in timesheet_data:
-        timesheet_data[employee] = {}
-    
-    if day not in timesheet_data[employee]:
-        day_name = datetime.strptime(day, '%Y-%m-%d').strftime('%A').upper()
-        timesheet_data[employee][day] = {
-            'day': day_name,
-            'hours': '',
-            'pay': '',
-            'project_name': '',
-            'install_days': '',
-            'install': ''
-        }
-    
-    # Update field
-    timesheet_data[employee][day][field] = value
-    
-    # If updating hours, calculate pay based on rate
-    if field == 'hours' and value:
-        employees = get_employees()
-        employee_data = next((emp for emp in employees if emp['name'] == employee), None)
+    try:
+        data = request.json
+        if not data or not all(k in data for k in ('employee', 'day', 'field', 'value')):
+            return jsonify({'success': False, 'error': 'Missing required fields'})
         
-        if employee_data and employee_data.get('rate'):
-            try:
+        employee = data['employee']
+        day = data['day']
+        field = data['field']
+        value = data['value']
+        calculate_only = data.get('calculate_only', False)
+        
+        # Load current timesheet data
+        timesheet_data = get_timesheet(period_id)
+        
+        # Initialize structure if needed
+        if employee not in timesheet_data:
+            timesheet_data[employee] = {}
+        if day not in timesheet_data[employee]:
+            timesheet_data[employee][day] = {
+                'hours': '',
+                'pay': '',
+                'project_name': '',
+                'install_days': '',
+                'install': ''
+            }
+        
+        response_data = {'success': True}
+        
+        # Update the specified field
+        if field == 'hours' and value:
+            # Get employee to check hourly rate
+            employees = get_employees()
+            employee_data = next((e for e in employees if e['name'] == employee), None)
+            
+            if employee_data and employee_data.get('hourly_rate'):
+                hourly_rate = float(employee_data['hourly_rate'])
                 hours = float(value)
-                rate = float(employee_data['rate'])
-                pay = hours * rate
-                timesheet_data[employee][day]['pay'] = str(pay)
-            except (ValueError, TypeError):
-                pass
-    
-    save_timesheet(period_id, timesheet_data)
-    
-    return jsonify({'success': True})
+                pay = hours * hourly_rate
+                response_data['pay'] = f"{pay:.2f}"
+                
+                # Only update the pay field if not in calculate_only mode
+                if not calculate_only:
+                    timesheet_data[employee][day]['pay'] = f"{pay:.2f}"
+            
+            # Always update hours field unless in calculate_only mode
+            if not calculate_only:
+                timesheet_data[employee][day][field] = value
+        else:
+            # For other fields, just update normally
+            timesheet_data[employee][day][field] = value
+            
+        # If not in calculate_only mode, save the updated data
+        if not calculate_only:
+            save_timesheet(period_id, timesheet_data)
+            
+        return jsonify(response_data)
+    except Exception as e:
+        app.logger.error(f"Error in update_timesheet: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/reports')
 def reports():
