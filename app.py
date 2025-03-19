@@ -63,8 +63,15 @@ def get_timesheet(period_id):
     if not os.path.exists(filename):
         return {}
     
-    with open(filename, 'r') as f:
-        return json.load(f)
+    try:
+        with open(filename, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        app.logger.error(f"Error loading timesheet: {str(e)}")
+        # Try to fix the file
+        fix_timesheet_file(period_id)
+        # Return empty timesheet
+        return {}
 
 def save_timesheet(period_id, timesheet_data):
     """Save timesheet data for a specific pay period"""
@@ -443,15 +450,31 @@ def update_timesheet(period_id):
             employees = get_employees()
             employee_data = next((e for e in employees if e['name'] == employee), None)
             
-            if employee_data and employee_data.get('hourly_rate'):
-                hourly_rate = float(employee_data['hourly_rate'])
-                hours = float(value)
-                pay = hours * hourly_rate
-                response_data['pay'] = f"{pay:.2f}"
+            if employee_data:
+                # Check for both 'hourly_rate' and 'rate' fields for compatibility
+                hourly_rate = None
+                if 'hourly_rate' in employee_data and employee_data['hourly_rate']:
+                    try:
+                        hourly_rate = float(employee_data['hourly_rate'])
+                    except (ValueError, TypeError):
+                        pass
+                elif 'rate' in employee_data and employee_data['rate']:
+                    try:
+                        hourly_rate = float(employee_data['rate'])
+                    except (ValueError, TypeError):
+                        pass
                 
-                # Only update the pay field if not in calculate_only mode
-                if not calculate_only:
-                    timesheet_data[employee][day]['pay'] = f"{pay:.2f}"
+                if hourly_rate:
+                    try:
+                        hours = float(value)
+                        pay = hours * hourly_rate
+                        response_data['pay'] = f"{pay:.2f}"
+                        
+                        # Only update the pay field if not in calculate_only mode
+                        if not calculate_only:
+                            timesheet_data[employee][day]['pay'] = f"{pay:.2f}"
+                    except (ValueError, TypeError) as e:
+                        app.logger.error(f"Error calculating pay: {str(e)}")
             
             # Always update hours field unless in calculate_only mode
             if not calculate_only:
@@ -462,7 +485,11 @@ def update_timesheet(period_id):
             
         # If not in calculate_only mode, save the updated data
         if not calculate_only:
-            save_timesheet(period_id, timesheet_data)
+            try:
+                save_timesheet(period_id, timesheet_data)
+            except Exception as e:
+                app.logger.error(f"Error saving timesheet: {str(e)}")
+                return jsonify({'success': False, 'error': f"Error saving timesheet: {str(e)}"})
             
         return jsonify(response_data)
     except Exception as e:
@@ -761,6 +788,40 @@ def export_data(period_id):
     df.to_excel(output_file, index=False, header=False)
     
     return send_file(output_file, as_attachment=True)
+
+# Helper function to fix corrupted timesheet file if needed
+def fix_timesheet_file(period_id):
+    """Attempt to fix a corrupted timesheet file"""
+    filename = os.path.join(DATA_FOLDER, f'timesheet_{period_id}.json')
+    if os.path.exists(filename):
+        try:
+            # Try to create a backup
+            backup_file = f"{filename}.bak"
+            if os.path.exists(filename):
+                with open(filename, 'r') as src:
+                    with open(backup_file, 'w') as dst:
+                        dst.write(src.read())
+            
+            # Reset to empty timesheet
+            empty_timesheet = {}
+            with open(filename, 'w') as f:
+                json.dump(empty_timesheet, f)
+            
+            return True
+        except Exception as e:
+            app.logger.error(f"Error fixing timesheet file: {str(e)}")
+            return False
+    return False
+
+# Add this route to fix corrupted timesheet files
+@app.route('/fix-timesheet/<period_id>', methods=['GET'])
+def fix_timesheet(period_id):
+    success = fix_timesheet_file(period_id)
+    if success:
+        flash('Timesheet file has been reset due to corruption. Please re-enter your data.', 'warning')
+    else:
+        flash('Failed to fix timesheet file', 'danger')
+    return redirect(url_for('timesheet', period_id=period_id))
 
 # Initialize with sample data if empty
 if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):

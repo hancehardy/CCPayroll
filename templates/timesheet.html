@@ -317,11 +317,12 @@
             }
             
             let newPayValue = 0;
+            let installComponent = 0;
             
             // Component 1: If install field has a value, add (install - assistant pay)
             if (installInput && installInput.value) {
                 const installValue = parseFloat(installInput.value) || 0;
-                const installComponent = Math.max(0, installValue - assistantPayValue);
+                installComponent = Math.max(0, installValue - assistantPayValue);
                 newPayValue += installComponent;
             }
             
@@ -346,7 +347,7 @@
                     if (data.success && data.pay) {
                         // Add the hourly component to the install component
                         const hourlyComponent = parseFloat(data.pay);
-                        const totalPay = newPayValue + hourlyComponent;
+                        const totalPay = installComponent + hourlyComponent;
                         
                         // Update the pay field
                         payInput.value = totalPay.toFixed(2);
