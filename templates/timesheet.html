@@ -251,6 +251,26 @@
                             copyToAssistantInstallers(employee, day, field, value);
                         }
                         
+                        // If the changed field is install or hours for a lead installer, or pay for an assistant installer, 
+                        // update the lead installer's pay value
+                        if ((field === 'install' || field === 'hours') && isLeadInstaller(employee)) {
+                            updateLeadInstallerPay(employee, day);
+                        } else if (field === 'pay' && !isLeadInstaller(employee)) {
+                            // If an assistant's pay changed, update the lead installer's pay in the same crew
+                            const assistantDiv = document.querySelector(`.employee-timesheet[data-employee="${employee}"]`);
+                            if (assistantDiv) {
+                                const crewNumber = assistantDiv.dataset.crew;
+                                if (crewNumber) {
+                                    // Find the lead installer in this crew
+                                    const leadInstaller = document.querySelector(`.employee-timesheet[data-crew="${crewNumber}"][data-role="lead"]`);
+                                    if (leadInstaller) {
+                                        const leadName = leadInstaller.dataset.employee;
+                                        updateLeadInstallerPay(leadName, day);
+                                    }
+                                }
+                            }
+                        }
+                        
                         // Calculate totals
                         calculateTotals();
                         
@@ -268,6 +288,62 @@
         function isLeadInstaller(employeeName) {
             const employeeDiv = document.querySelector(`.employee-timesheet[data-employee="${employeeName}"]`);
             return employeeDiv && employeeDiv.dataset.role === 'lead';
+        }
+        
+        // Function to update lead installer pay based on conditions
+        function updateLeadInstallerPay(leadName, day) {
+            const leadDiv = document.querySelector(`.employee-timesheet[data-employee="${leadName}"]`);
+            if (!leadDiv || leadDiv.dataset.role !== 'lead') return;
+            
+            const crewNum = leadDiv.dataset.crew;
+            
+            // Get the install value
+            const installInput = leadDiv.querySelector(`.install-input[data-day="${day}"]`);
+            // Get the hours value
+            const hoursInput = leadDiv.querySelector(`.hours-input[data-day="${day}"]`);
+            // Get the pay field to update
+            const payInput = leadDiv.querySelector(`.pay-input[data-day="${day}"]`);
+            
+            if (!payInput) return;
+            
+            // Get assistant pay for this day and crew
+            const assistantPayDisplay = leadDiv.querySelector(`.assistant-pay-display[data-day="${day}"]`);
+            let assistantPayValue = 0;
+            
+            if (assistantPayDisplay) {
+                // Parse the assistant pay value (remove $ sign and convert to number)
+                const assistantPayText = assistantPayDisplay.textContent.replace('$', '');
+                assistantPayValue = parseFloat(assistantPayText) || 0;
+            }
+            
+            // Condition 1: If install field has a value, pay = install - assistant pay
+            if (installInput && installInput.value) {
+                const installValue = parseFloat(installInput.value) || 0;
+                const newPayValue = Math.max(0, installValue - assistantPayValue);
+                
+                // Update the pay field
+                payInput.value = newPayValue.toFixed(2);
+                
+                // Send update to server
+                fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        employee: leadName,
+                        day: day,
+                        field: 'pay',
+                        value: newPayValue.toFixed(2)
+                    }),
+                })
+                .then(response => response.json())
+                .catch(error => {
+                    console.error('Error updating pay:', error);
+                });
+            } 
+            // Condition 2: If hours field has a value, let the server calculate pay (hourly rate * hours)
+            // This is already handled by the server when the hours field changes
         }
         
         // Function to copy project name or install days from lead installer to assistant installers
@@ -326,6 +402,13 @@
                     assistantPayDisplays.forEach(display => {
                         display.textContent = '$' + totalAssistantPay.toFixed(2);
                     });
+                    
+                    // After updating assistant pay display, also update lead installer pay
+                    const leadInstaller = crew.querySelector(`.employee-timesheet[data-role="lead"]`);
+                    if (leadInstaller) {
+                        const leadName = leadInstaller.dataset.employee;
+                        updateLeadInstallerPay(leadName, dayDate);
+                    }
                 });
             });
         }
