@@ -89,4 +89,30 @@ python app.py
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Database System
+
+The application now uses SQLite for data storage, which provides the following benefits:
+
+1. **Data Integrity**: Prevents data corruption issues that were occurring with JSON files
+2. **Transactional Support**: Each update is atomic, preventing partial writes
+3. **Concurrency**: Properly handles multiple simultaneous updates
+4. **Better Performance**: More efficient for larger datasets
+
+### Migration Process
+
+When you first run the application after this update, it will automatically:
+
+1. Initialize the SQLite database (stored in `data/payroll.db`)
+2. Migrate all existing data from JSON files to the database
+3. Keep the original JSON files as backup
+
+No manual migration steps are required. Your existing data will be preserved.
+
+### Troubleshooting
+
+If you experience any issues after migration:
+
+1. Check the `data/payroll.log` file for error messages
+2. Use the `/fix-timesheet/<period_id>` route to reset a specific timesheet if needed 

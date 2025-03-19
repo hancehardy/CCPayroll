@@ -10,6 +10,11 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
 import uuid
+import sqlite3
+from contextlib import contextmanager
+import threading
+import logging
+import random
 
 app = Flask(__name__)
 app.secret_key = 'creative_closets_payroll_app'
@@ -19,6 +24,7 @@ UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 DATA_FOLDER = 'data'
 REPORTS_FOLDER = 'static/reports'
+DATABASE_PATH = os.path.join(DATA_FOLDER, 'payroll.db')
 
 # Create necessary directories
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -27,56 +33,242 @@ os.makedirs(REPORTS_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join(DATA_FOLDER, 'payroll.log'))
+    ]
+)
+logger = logging.getLogger('payroll')
+
+# Thread-local storage for database connections
+db_local = threading.local()
+db_connections = {}  # Track connections for monitoring
+
+# Database setup
+def init_db():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Create pay_periods table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pay_periods (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL
+        )
+        ''')
+        
+        # Create employees table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS employees (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            rate REAL,
+            install_crew INTEGER DEFAULT 0,
+            installer_role TEXT
+        )
+        ''')
+        
+        # Create timesheet table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS timesheet_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            period_id TEXT NOT NULL,
+            employee_name TEXT NOT NULL,
+            day TEXT NOT NULL,
+            hours TEXT,
+            pay TEXT,
+            project_name TEXT,
+            install_days TEXT,
+            install TEXT,
+            FOREIGN KEY (period_id) REFERENCES pay_periods(id),
+            UNIQUE (period_id, employee_name, day)
+        )
+        ''')
+        
+        conn.commit()
+
+@contextmanager
+def get_db():
+    """Context manager for getting database connection"""
+    thread_id = threading.get_ident()
+    
+    if not hasattr(db_local, 'connection'):
+        db_local.connection = sqlite3.connect(DATABASE_PATH)
+        db_local.connection.row_factory = sqlite3.Row
+        db_connections[thread_id] = {
+            'created_at': datetime.now(),
+            'last_used': datetime.now()
+        }
+        logger.info(f"New DB connection created for thread {thread_id}")
+    else:
+        # Update last used time
+        if thread_id in db_connections:
+            db_connections[thread_id]['last_used'] = datetime.now()
+    
+    try:
+        yield db_local.connection
+    except Exception as e:
+        db_local.connection.rollback()
+        logger.error(f"Database error in thread {thread_id}: {str(e)}")
+        raise
+    finally:
+        # Keep connection open for this thread's lifetime
+        pass
+
+def close_db():
+    """Close database connection if it exists"""
+    thread_id = threading.get_ident()
+    
+    if hasattr(db_local, 'connection'):
+        db_local.connection.close()
+        if thread_id in db_connections:
+            del db_connections[thread_id]
+        del db_local.connection
+        logger.info(f"Closed DB connection for thread {thread_id}")
+
+def monitor_db_connections():
+    """Log information about current database connections"""
+    now = datetime.now()
+    for thread_id, info in list(db_connections.items()):
+        age = (now - info['created_at']).total_seconds()
+        idle_time = (now - info['last_used']).total_seconds()
+        
+        if idle_time > 300:  # 5 minutes idle
+            logger.warning(f"Thread {thread_id} has idle DB connection for {idle_time:.1f} seconds")
+        
+        if age > 3600:  # 1 hour old
+            logger.info(f"Thread {thread_id} has DB connection open for {age:.1f} seconds")
+
+@app.before_request
+def before_request():
+    """Run before each request"""
+    # Periodically monitor database connections
+    if random.random() < 0.01:  # 1% chance to run on each request
+        monitor_db_connections()
+
+@app.teardown_appcontext
+def teardown_db(exception):
+    """Close database connection at the end of the request"""
+    close_db()
+
 # Helper functions
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def get_pay_periods():
-    """Get all pay periods from the data folder"""
-    if not os.path.exists(os.path.join(DATA_FOLDER, 'pay_periods.json')):
-        return []
-    
-    with open(os.path.join(DATA_FOLDER, 'pay_periods.json'), 'r') as f:
-        return json.load(f)
+    """Get all pay periods from the database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM pay_periods ORDER BY start_date DESC')
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
 
-def save_pay_periods(pay_periods):
-    """Save pay periods to the data folder"""
-    with open(os.path.join(DATA_FOLDER, 'pay_periods.json'), 'w') as f:
-        json.dump(pay_periods, f)
+def save_pay_period(period_data):
+    """Save a pay period to the database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT OR REPLACE INTO pay_periods (id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
+            (period_data['id'], period_data['name'], period_data['start_date'], period_data['end_date'])
+        )
+        conn.commit()
 
 def get_employees():
-    """Get all employees from the data folder"""
-    if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
-        return []
-    
-    with open(os.path.join(DATA_FOLDER, 'employees.json'), 'r') as f:
-        return json.load(f)
+    """Get all employees from the database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM employees')
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
 
-def save_employees(employees):
-    """Save employees to the data folder"""
-    with open(os.path.join(DATA_FOLDER, 'employees.json'), 'w') as f:
-        json.dump(employees, f)
+def save_employee(employee_data):
+    """Save an employee to the database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT OR REPLACE INTO employees (id, name, rate, install_crew, installer_role) VALUES (?, ?, ?, ?, ?)',
+            (employee_data['id'], employee_data['name'], employee_data['rate'], 
+             employee_data['install_crew'], employee_data['installer_role'])
+        )
+        conn.commit()
 
 def get_timesheet(period_id):
     """Get timesheet data for a specific pay period"""
-    filename = os.path.join(DATA_FOLDER, f'timesheet_{period_id}.json')
-    if not os.path.exists(filename):
-        return {}
-    
-    try:
-        with open(filename, 'r') as f:
-            return json.load(f)
-    except json.JSONDecodeError as e:
-        app.logger.error(f"Error loading timesheet: {str(e)}")
-        # Try to fix the file
-        fix_timesheet_file(period_id)
-        # Return empty timesheet
-        return {}
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT employee_name, day, hours, pay, project_name, install_days, install FROM timesheet_entries WHERE period_id = ?',
+            (period_id,)
+        )
+        rows = cursor.fetchall()
+        
+        # Restructure data to match the original format
+        timesheet_data = {}
+        for row in rows:
+            employee_name = row['employee_name']
+            day = row['day']
+            
+            if employee_name not in timesheet_data:
+                timesheet_data[employee_name] = {}
+                
+            timesheet_data[employee_name][day] = {
+                'hours': row['hours'] or '',
+                'pay': row['pay'] or '',
+                'project_name': row['project_name'] or '',
+                'install_days': row['install_days'] or '',
+                'install': row['install'] or ''
+            }
+        
+        return timesheet_data
 
-def save_timesheet(period_id, timesheet_data):
-    """Save timesheet data for a specific pay period"""
-    with open(os.path.join(DATA_FOLDER, f'timesheet_{period_id}.json'), 'w') as f:
-        json.dump(timesheet_data, f)
+def save_timesheet_entry(period_id, employee_name, day, field, value):
+    """Save a timesheet entry for a specific field"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Check if entry exists
+        cursor.execute(
+            'SELECT * FROM timesheet_entries WHERE period_id = ? AND employee_name = ? AND day = ?',
+            (period_id, employee_name, day)
+        )
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update specific field
+            cursor.execute(
+                f'UPDATE timesheet_entries SET {field} = ? WHERE period_id = ? AND employee_name = ? AND day = ?',
+                (value, period_id, employee_name, day)
+            )
+        else:
+            # Default values for all fields
+            fields = {
+                'hours': '',
+                'pay': '',
+                'project_name': '',
+                'install_days': '',
+                'install': ''
+            }
+            # Set the specified field
+            fields[field] = value
+            
+            # Insert new entry
+            cursor.execute(
+                '''
+                INSERT INTO timesheet_entries 
+                (period_id, employee_name, day, hours, pay, project_name, install_days, install)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (period_id, employee_name, day, fields['hours'], fields['pay'], 
+                 fields['project_name'], fields['install_days'], fields['install'])
+            )
+        
+        conn.commit()
 
 def generate_report(period_id=None):
     """Generate payroll report for a specific period or all periods"""
@@ -138,19 +330,7 @@ def generate_report(period_id=None):
     active_employees = [emp['name'] for emp in employees if employee_total_pay[emp['name']] > 0]
     
     if active_employees:
-        # 1. Total Pay by Employee
-        plt.figure(figsize=(12, 6))
-        emp_pays = [employee_total_pay[emp] for emp in active_employees]
-        plt.bar(active_employees, emp_pays)
-        plt.title('Total Pay by Employee')
-        plt.xlabel('Employee')
-        plt.ylabel('Total Pay ($)')
-        plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
-        plt.savefig(os.path.join(REPORTS_FOLDER, f'total_pay_by_employee_{report_id}.png'))
-        plt.close()
-        
-        # 2. Pay Trend Over Time
+        # Only generate multi-period graphs if we have more than one period
         if len(periods_to_process) > 1:
             plt.figure(figsize=(12, 6))
             for employee in active_employees:
@@ -169,7 +349,7 @@ def generate_report(period_id=None):
             plt.savefig(os.path.join(REPORTS_FOLDER, f'pay_trend_over_time_{report_id}.png'))
             plt.close()
             
-            # 3. Total Payroll by Period
+            # Total Payroll by Period
             plt.figure(figsize=(12, 6))
             period_names = [p['name'] for p in periods_to_process]
             period_sums = [sum(period_totals[p]['total'] for p in period_names if p in period_totals)]
@@ -220,23 +400,24 @@ def add_employee():
             flash('Employee name is required', 'danger')
             return redirect(url_for('add_employee'))
         
-        employees = get_employees()
-        
         # Check if employee already exists
-        if any(emp['name'] == name for emp in employees):
-            flash('Employee already exists', 'danger')
-            return redirect(url_for('add_employee'))
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id FROM employees WHERE name = ?', (name,))
+            if cursor.fetchone():
+                flash('Employee already exists', 'danger')
+                return redirect(url_for('add_employee'))
         
         # Add new employee
-        employees.append({
+        employee_data = {
             'id': str(uuid.uuid4()),
             'name': name,
             'rate': rate,
             'install_crew': install_crew,
             'installer_role': installer_role
-        })
+        }
+        save_employee(employee_data)
         
-        save_employees(employees)
         flash('Employee added successfully', 'success')
         return redirect(url_for('employees'))
     
@@ -244,8 +425,12 @@ def add_employee():
 
 @app.route('/employees/edit/<employee_id>', methods=['GET', 'POST'])
 def edit_employee(employee_id):
-    employees = get_employees()
-    employee = next((emp for emp in employees if emp['id'] == employee_id), None)
+    # Get the employee from the database
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM employees WHERE id = ?', (employee_id,))
+        row = cursor.fetchone()
+        employee = dict(row) if row else None
     
     if not employee:
         flash('Employee not found', 'danger')
@@ -267,13 +452,16 @@ def edit_employee(employee_id):
             flash('Employee name is required', 'danger')
             return redirect(url_for('edit_employee', employee_id=employee_id))
         
-        # Update employee
-        employee['name'] = name
-        employee['rate'] = rate
-        employee['install_crew'] = install_crew
-        employee['installer_role'] = installer_role
+        # Update employee in database
+        employee = {
+            'id': employee_id,
+            'name': name,
+            'rate': rate,
+            'install_crew': install_crew,
+            'installer_role': installer_role
+        }
         
-        save_employees(employees)
+        save_employee(employee)
         flash('Employee updated successfully', 'success')
         return redirect(url_for('employees'))
     
@@ -281,9 +469,11 @@ def edit_employee(employee_id):
 
 @app.route('/employees/delete/<employee_id>', methods=['POST'])
 def delete_employee(employee_id):
-    employees = get_employees()
-    employees = [emp for emp in employees if emp['id'] != employee_id]
-    save_employees(employees)
+    # Get employees and remove the one with matching ID
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM employees WHERE id = ?', (employee_id,))
+        conn.commit()
     
     flash('Employee deleted successfully', 'success')
     return redirect(url_for('employees'))
@@ -296,62 +486,23 @@ def pay_periods():
 @app.route('/pay-periods/add', methods=['GET', 'POST'])
 def add_pay_period():
     if request.method == 'POST':
+        name = request.form.get('name')
         start_date = request.form.get('start_date')
         end_date = request.form.get('end_date')
         
-        if not start_date or not end_date:
-            flash('Start and end dates are required', 'danger')
+        if not all([name, start_date, end_date]):
+            flash('All fields are required', 'danger')
             return redirect(url_for('add_pay_period'))
         
-        # Convert to datetime objects
-        start_date = datetime.strptime(start_date, '%Y-%m-%d')
-        end_date = datetime.strptime(end_date, '%Y-%m-%d')
+        # Create pay period
+        period_data = {
+            'id': str(uuid.uuid4()),
+            'name': name,
+            'start_date': start_date,
+            'end_date': end_date
+        }
         
-        # Format for display
-        period_name = f"{start_date.strftime('%m.%d.%y')} to {end_date.strftime('%m.%d.%y')}"
-        
-        pay_periods = get_pay_periods()
-        
-        # Check if period already exists
-        if any(p['name'] == period_name for p in pay_periods):
-            flash('Pay period already exists', 'danger')
-            return redirect(url_for('add_pay_period'))
-        
-        # Add new pay period
-        period_id = str(uuid.uuid4())
-        pay_periods.append({
-            'id': period_id,
-            'name': period_name,
-            'start_date': start_date.strftime('%Y-%m-%d'),
-            'end_date': end_date.strftime('%Y-%m-%d')
-        })
-        
-        save_pay_periods(pay_periods)
-        
-        # Initialize timesheet for this period
-        employees = get_employees()
-        timesheet = {}
-        
-        # Generate days between start and end date
-        days = []
-        current_date = start_date
-        while current_date <= end_date:
-            days.append(current_date.strftime('%Y-%m-%d'))
-            current_date += timedelta(days=1)
-        
-        # Initialize timesheet for each employee
-        for employee in employees:
-            timesheet[employee['name']] = {}
-            for day in days:
-                day_name = datetime.strptime(day, '%Y-%m-%d').strftime('%A').upper()
-                timesheet[employee['name']][day] = {
-                    'day': day_name,
-                    'hours': '',
-                    'pay': ''
-                }
-        
-        save_timesheet(period_id, timesheet)
-        
+        save_pay_period(period_data)
         flash('Pay period added successfully', 'success')
         return redirect(url_for('pay_periods'))
     
@@ -359,14 +510,19 @@ def add_pay_period():
 
 @app.route('/pay-periods/delete/<period_id>', methods=['POST'])
 def delete_pay_period(period_id):
-    pay_periods = get_pay_periods()
-    pay_periods = [p for p in pay_periods if p['id'] != period_id]
-    save_pay_periods(pay_periods)
+    # Delete pay period from database
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Delete the pay period
+        cursor.execute('DELETE FROM pay_periods WHERE id = ?', (period_id,))
+        # Delete associated timesheet entries
+        cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
+        conn.commit()
     
-    # Delete associated timesheet
-    timesheet_file = os.path.join(DATA_FOLDER, f'timesheet_{period_id}.json')
-    if os.path.exists(timesheet_file):
-        os.remove(timesheet_file)
+    # Delete any associated files (like Excel exports)
+    export_file = os.path.join(UPLOAD_FOLDER, f'timesheet_{period_id}.xlsx')
+    if os.path.exists(export_file):
+        os.remove(export_file)
     
     flash('Pay period deleted successfully', 'success')
     return redirect(url_for('pay_periods'))
@@ -427,21 +583,6 @@ def update_timesheet(period_id):
         value = data['value']
         calculate_only = data.get('calculate_only', False)
         
-        # Load current timesheet data
-        timesheet_data = get_timesheet(period_id)
-        
-        # Initialize structure if needed
-        if employee not in timesheet_data:
-            timesheet_data[employee] = {}
-        if day not in timesheet_data[employee]:
-            timesheet_data[employee][day] = {
-                'hours': '',
-                'pay': '',
-                'project_name': '',
-                'install_days': '',
-                'install': ''
-            }
-        
         response_data = {'success': True}
         
         # Update the specified field
@@ -472,24 +613,17 @@ def update_timesheet(period_id):
                         
                         # Only update the pay field if not in calculate_only mode
                         if not calculate_only:
-                            timesheet_data[employee][day]['pay'] = f"{pay:.2f}"
+                            save_timesheet_entry(period_id, employee, day, 'pay', f"{pay:.2f}")
                     except (ValueError, TypeError) as e:
                         app.logger.error(f"Error calculating pay: {str(e)}")
             
             # Always update hours field unless in calculate_only mode
             if not calculate_only:
-                timesheet_data[employee][day][field] = value
+                save_timesheet_entry(period_id, employee, day, field, value)
         else:
             # For other fields, just update normally
-            timesheet_data[employee][day][field] = value
-            
-        # If not in calculate_only mode, save the updated data
-        if not calculate_only:
-            try:
-                save_timesheet(period_id, timesheet_data)
-            except Exception as e:
-                app.logger.error(f"Error saving timesheet: {str(e)}")
-                return jsonify({'success': False, 'error': f"Error saving timesheet: {str(e)}"})
+            if not calculate_only:
+                save_timesheet_entry(period_id, employee, day, field, value)
             
         return jsonify(response_data)
     except Exception as e:
@@ -576,7 +710,7 @@ def import_data():
                         'end_date': end_date.strftime('%Y-%m-%d')
                     })
                     
-                    save_pay_periods(pay_periods)
+                    save_pay_period(pay_periods)
                     
                     # Extract employees and timesheet data
                     employees = get_employees()
@@ -599,7 +733,7 @@ def import_data():
                                 'installer_role': 'none'
                             })
                     
-                    save_employees(employees)
+                    save_employee(employees)
                     
                     # Find the PAY column
                     pay_col_idx = None
@@ -662,7 +796,7 @@ def import_data():
                                     'pay': ''
                                 }
                     
-                    save_timesheet(period_id, timesheet)
+                    save_timesheet_entry(period_id, employee, day, field, value)
                 
                 flash('Data imported successfully', 'success')
                 return redirect(url_for('index'))
@@ -789,38 +923,20 @@ def export_data(period_id):
     
     return send_file(output_file, as_attachment=True)
 
-# Helper function to fix corrupted timesheet file if needed
-def fix_timesheet_file(period_id):
-    """Attempt to fix a corrupted timesheet file"""
-    filename = os.path.join(DATA_FOLDER, f'timesheet_{period_id}.json')
-    if os.path.exists(filename):
-        try:
-            # Try to create a backup
-            backup_file = f"{filename}.bak"
-            if os.path.exists(filename):
-                with open(filename, 'r') as src:
-                    with open(backup_file, 'w') as dst:
-                        dst.write(src.read())
-            
-            # Reset to empty timesheet
-            empty_timesheet = {}
-            with open(filename, 'w') as f:
-                json.dump(empty_timesheet, f)
-            
-            return True
-        except Exception as e:
-            app.logger.error(f"Error fixing timesheet file: {str(e)}")
-            return False
-    return False
-
-# Add this route to fix corrupted timesheet files
 @app.route('/fix-timesheet/<period_id>', methods=['GET'])
 def fix_timesheet(period_id):
-    success = fix_timesheet_file(period_id)
-    if success:
-        flash('Timesheet file has been reset due to corruption. Please re-enter your data.', 'warning')
-    else:
-        flash('Failed to fix timesheet file', 'danger')
+    try:
+        # Delete all timesheet entries for this period and recreate an empty structure
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
+            conn.commit()
+        
+        flash('Timesheet has been reset. Please re-enter your data.', 'warning')
+    except Exception as e:
+        app.logger.error(f"Error fixing timesheet: {str(e)}")
+        flash('Failed to fix timesheet', 'danger')
+    
     return redirect(url_for('timesheet', period_id=period_id))
 
 # Initialize with sample data if empty
@@ -848,7 +964,72 @@ if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
             'installer_role': 'none'
         }
     ]
-    save_employees(sample_employees)
+    # Save each employee individually
+    for employee in sample_employees:
+        save_employee(employee)
+
+# Initialize database and migrate data from JSON if needed
+def migrate_json_to_db():
+    """Migrate data from JSON files to the SQLite database"""
+    # Check if we need to migrate (if tables are empty)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM pay_periods')
+        pay_periods_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM employees')
+        employees_count = cursor.fetchone()[0]
+        
+        # If we already have data, skip migration
+        if pay_periods_count > 0 or employees_count > 0:
+            return
+        
+        # Migrate pay periods
+        if os.path.exists(os.path.join(DATA_FOLDER, 'pay_periods.json')):
+            try:
+                with open(os.path.join(DATA_FOLDER, 'pay_periods.json'), 'r') as f:
+                    pay_periods = json.load(f)
+                    for period in pay_periods:
+                        save_pay_period(period)
+                app.logger.info("Migrated pay periods from JSON to database")
+            except Exception as e:
+                app.logger.error(f"Error migrating pay periods: {str(e)}")
+        
+        # Migrate employees
+        if os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
+            try:
+                with open(os.path.join(DATA_FOLDER, 'employees.json'), 'r') as f:
+                    employees = json.load(f)
+                    for employee in employees:
+                        save_employee(employee)
+                app.logger.info("Migrated employees from JSON to database")
+            except Exception as e:
+                app.logger.error(f"Error migrating employees: {str(e)}")
+        
+        # Migrate timesheets
+        for filename in os.listdir(DATA_FOLDER):
+            if filename.startswith('timesheet_') and filename.endswith('.json'):
+                try:
+                    period_id = filename.replace('timesheet_', '').replace('.json', '')
+                    
+                    with open(os.path.join(DATA_FOLDER, filename), 'r') as f:
+                        timesheet_data = json.load(f)
+                        
+                        for employee_name, days in timesheet_data.items():
+                            for day, data in days.items():
+                                for field, value in data.items():
+                                    if value:  # Only save non-empty values
+                                        save_timesheet_entry(period_id, employee_name, day, field, value)
+                    
+                    app.logger.info(f"Migrated timesheet {filename} to database")
+                except Exception as e:
+                    app.logger.error(f"Error migrating timesheet {filename}: {str(e)}")
+
+# Initialize the database
+init_db()
+
+# Migrate existing JSON data to the database
+migrate_json_to_db()
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 

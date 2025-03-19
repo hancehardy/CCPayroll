@@ -38,12 +38,6 @@
                                 </tbody>
                             </table>
                         </div>
-                        
-                        {% if report.active_employees %}
-                        <div class="mt-3">
-                            <img src="{{ url_for('static', filename='reports/total_pay_by_employee_' + report_id + '.png') }}" class="img-fluid" alt="Total Pay by Employee">
-                        </div>
-                        {% endif %}
                     </div>
                 </div>
                 
@@ -69,7 +63,7 @@
                 
                 <div class="row mt-4">
                     <div class="col-md-12">
-                        <h5>4. Pay Details by Period</h5>
+                        <h5>{% if report.periods_processed|length > 1 %}4{% else %}2{% endif %}. Pay Details by Period</h5>
                         {% for period in report.periods_processed %}
                         <div class="card mt-3">
                             <div class="card-header">
