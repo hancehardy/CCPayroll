@@ -44,7 +44,9 @@
                                                     <th>DATE</th>
                                                     <th>PROJECT NAME</th>
                                                     <th>DAYS</th>
+                                                    {% if employee.installer_role != 'assistant' %}
                                                     <th>INSTALL</th>
+                                                    {% endif %}
                                                     <th>HOURS</th>
                                                     <th>PAY</th>
                                                 </tr>
@@ -70,6 +72,7 @@
                                                                data-field="install_days"
                                                                value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].install_days }}{% endif %}">
                                                     </td>
+                                                    {% if employee.installer_role != 'assistant' %}
                                                     <td>
                                                         <div class="input-group">
                                                             <span class="input-group-text">$</span>
@@ -83,6 +86,7 @@
                                                                    value="{% if employee.name in timesheet and day.date in timesheet[employee.name] and timesheet[employee.name][day.date].install %}{{ timesheet[employee.name][day.date].install }}{% endif %}">
                                                         </div>
                                                     </td>
+                                                    {% endif %}
                                                     <td>
                                                         <input type="number" 
                                                                class="form-control form-control-sm hours-input" 
@@ -109,7 +113,7 @@
                                                 </tr>
                                                 {% endfor %}
                                                 <tr>
-                                                    <td colspan="5" class="text-end fw-bold">TOTAL</td>
+                                                    <td colspan="{% if employee.installer_role != 'assistant' %}5{% else %}4{% endif %}" class="text-end fw-bold">TOTAL</td>
                                                     <td class="employee-hours-total"></td>
                                                     <td class="employee-pay-total"></td>
                                                 </tr>
