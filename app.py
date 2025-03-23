@@ -11,7 +11,6 @@ from io import BytesIO
 import base64
 import uuid
 import sqlite3
-from contextlib import contextmanager
 import threading
 import logging
 import random
@@ -51,167 +50,22 @@ logger = logging.getLogger('payroll')
 
 # Thread-local storage for database connections
 db_local = threading.local()
-db_connections = {}  # Track connections for monitoring
+db_connections = {}
 
-# Database setup
-def init_db():
-    with get_db() as conn:
-        cursor = conn.cursor()
-        
-        # Create pay_periods table
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS pay_periods (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            start_date TEXT NOT NULL,
-            end_date TEXT NOT NULL
-        )
-        ''')
-        
-        # Check if employees table exists and if we need to migrate
-        cursor.execute("PRAGMA table_info(employees)")
-        columns = cursor.fetchall()
-        column_names = [column['name'] for column in columns]
-        
-        if not columns:
-            # Create employees table if it doesn't exist
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS employees (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                rate REAL,
-                install_crew INTEGER DEFAULT 0,
-                position TEXT,
-                pay_type TEXT DEFAULT 'hourly',
-                salary REAL,
-                commission_rate REAL
-            )
-            ''')
-        elif 'installer_role' in column_names and 'position' not in column_names:
-            # Migrate from installer_role to position
-            logger.info("Migrating employees table from installer_role to position")
-            # Create new table with updated schema
-            cursor.execute('''
-            CREATE TABLE employees_new (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                rate REAL,
-                install_crew INTEGER DEFAULT 0,
-                position TEXT,
-                pay_type TEXT DEFAULT 'hourly',
-                salary REAL,
-                commission_rate REAL
-            )
-            ''')
-            # Copy data from old table to new table
-            cursor.execute('''
-            INSERT INTO employees_new (id, name, rate, install_crew, position)
-            SELECT id, name, rate, install_crew, installer_role FROM employees
-            ''')
-            # Drop old table
-            cursor.execute('DROP TABLE employees')
-            # Rename new table to employees
-            cursor.execute('ALTER TABLE employees_new RENAME TO employees')
-            logger.info("Migration complete")
-        elif 'pay_type' not in column_names:
-            # Add pay_type, salary, and commission_rate columns if they don't exist
-            logger.info("Adding pay_type, salary, and commission_rate columns to employees table")
-            cursor.execute('ALTER TABLE employees ADD COLUMN pay_type TEXT DEFAULT "hourly"')
-            cursor.execute('ALTER TABLE employees ADD COLUMN salary REAL')
-            cursor.execute('ALTER TABLE employees ADD COLUMN commission_rate REAL')
-            logger.info("Columns added successfully")
-        
-        # Create timesheet table
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS timesheet_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            period_id TEXT NOT NULL,
-            employee_name TEXT NOT NULL,
-            day TEXT NOT NULL,
-            hours TEXT,
-            pay TEXT,
-            project_name TEXT,
-            install_days TEXT,
-            install TEXT,
-            regular_hours REAL,
-            overtime_hours REAL,
-            job_name TEXT,
-            notes TEXT,
-            FOREIGN KEY (period_id) REFERENCES pay_periods(id),
-            UNIQUE (period_id, employee_name, day)
-        )
-        ''')
-        
-        conn.commit()
+# Initialize database
+@app.before_first_request
+def initialize_database():
+    """Initialize the database when the app starts"""
+    init_db()
+    # Apply any pending migrations
+    migrate_database()
 
-@contextmanager
-def get_db():
-    """Context manager for getting database connection"""
-    thread_id = threading.get_ident()
-    
-    if not hasattr(db_local, 'connection'):
-        db_local.connection = sqlite3.connect(DATABASE_PATH)
-        db_local.connection.row_factory = sqlite3.Row
-        db_connections[thread_id] = {
-            'created_at': datetime.now(),
-            'last_used': datetime.now()
-        }
-        logger.info(f"New DB connection created for thread {thread_id}")
-    else:
-        # Update last used time
-        if thread_id in db_connections:
-            db_connections[thread_id]['last_used'] = datetime.now()
-    
-    try:
-        yield db_local.connection
-    except Exception as e:
-        db_local.connection.rollback()
-        logger.error(f"Database error in thread {thread_id}: {str(e)}")
-        raise
-    finally:
-        # Keep connection open for this thread's lifetime
-        pass
-
-def close_db():
-    """Close database connection if it exists"""
-    thread_id = threading.get_ident()
-    
-    if hasattr(db_local, 'connection'):
-        db_local.connection.close()
-        if thread_id in db_connections:
-            del db_connections[thread_id]
-        del db_local.connection
-        logger.info(f"Closed DB connection for thread {thread_id}")
-
-def monitor_db_connections():
-    """Log information about current database connections"""
-    now = datetime.now()
-    for thread_id, info in list(db_connections.items()):
-        age = (now - info['created_at']).total_seconds()
-        idle_time = (now - info['last_used']).total_seconds()
-        
-        if idle_time > 300:  # 5 minutes idle
-            logger.warning(f"Thread {thread_id} has idle DB connection for {idle_time:.1f} seconds")
-        
-        if age > 3600:  # 1 hour old
-            logger.info(f"Thread {thread_id} has DB connection open for {age:.1f} seconds")
-
-@app.before_request
-def before_request():
-    """Run before each request"""
-    # Periodically monitor database connections
-    if random.random() < 0.01:  # 1% chance to run on each request
-        monitor_db_connections()
-
-@app.teardown_appcontext
-def teardown_db(exception):
-    """Close database connection at the end of the request"""
-    close_db()
+def allowed_file(filename):
+    """Check if a file has an allowed extension"""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Helper functions
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 def get_pay_periods():
     """Get all pay periods from the database"""
     with get_db() as conn:
@@ -1272,75 +1126,5 @@ if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
     for employee in sample_employees:
         save_employee(employee)
 
-# Initialize database and migrate data from JSON if needed
-def migrate_json_to_db():
-    """Migrate data from JSON files to the SQLite database"""
-    # Check if we need to migrate (if tables are empty)
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM pay_periods')
-        pay_periods_count = cursor.fetchone()[0]
-        
-        cursor.execute('SELECT COUNT(*) FROM employees')
-        employees_count = cursor.fetchone()[0]
-        
-        # If we already have data, skip migration
-        if pay_periods_count > 0 or employees_count > 0:
-            return
-        
-        # Migrate pay periods
-        if os.path.exists(os.path.join(DATA_FOLDER, 'pay_periods.json')):
-            try:
-                with open(os.path.join(DATA_FOLDER, 'pay_periods.json'), 'r') as f:
-                    pay_periods = json.load(f)
-                    for period in pay_periods:
-                        save_pay_period(period)
-                app.logger.info("Migrated pay periods from JSON to database")
-            except Exception as e:
-                app.logger.error(f"Error migrating pay periods: {str(e)}")
-        
-        # Migrate employees
-        if os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
-            try:
-                with open(os.path.join(DATA_FOLDER, 'employees.json'), 'r') as f:
-                    employees = json.load(f)
-                    for employee in employees:
-                        save_employee(employee)
-                app.logger.info("Migrated employees from JSON to database")
-            except Exception as e:
-                app.logger.error(f"Error migrating employees: {str(e)}")
-        
-        # Migrate timesheets
-        for filename in os.listdir(DATA_FOLDER):
-            if filename.startswith('timesheet_') and filename.endswith('.json'):
-                try:
-                    period_id = filename.replace('timesheet_', '').replace('.json', '')
-                    
-                    with open(os.path.join(DATA_FOLDER, filename), 'r') as f:
-                        timesheet_data = json.load(f)
-                        
-                        for employee_name, days in timesheet_data.items():
-                            for day, data in days.items():
-                                for field, value in data.items():
-                                    if value:  # Only save non-empty values
-                                        save_timesheet_entry(period_id, employee_name, day, field, value)
-                    
-                    app.logger.info(f"Migrated timesheet {filename} to database")
-                except Exception as e:
-                    app.logger.error(f"Error migrating timesheet {filename}: {str(e)}")
-
-# Initialize the database
-init_db()
-
-# Migrate existing JSON data to the database
-migrate_json_to_db()
-
 if __name__ == '__main__':
-    # Ensure database exists
-    init_db()
-    
-    # Run any necessary migrations within the Flask app context
-    with app.app_context():
-        migrate_database()
-    
     app.run(debug=True, port=5001) 
