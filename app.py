@@ -179,10 +179,19 @@ def get_timesheet(period_id):
     """Get timesheet data for a specific pay period"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            'SELECT employee_name, day, hours, pay, project_name, install_days, install FROM timesheet_entries WHERE period_id = ?',
-            (period_id,)
-        )
+        
+        # Check if PostgreSQL connection
+        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+            cursor.execute(
+                'SELECT employee_name, day, hours, pay, project_name, install_days, install FROM timesheet_entries WHERE period_id = %s',
+                (period_id,)
+            )
+        else:
+            cursor.execute(
+                'SELECT employee_name, day, hours, pay, project_name, install_days, install FROM timesheet_entries WHERE period_id = ?',
+                (period_id,)
+            )
+            
         rows = cursor.fetchall()
         
         # Restructure data to match the original format
@@ -427,7 +436,13 @@ def add_employee():
         # Check if employee already exists
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id FROM employees WHERE name = ?', (name,))
+            
+            # Check if PostgreSQL connection
+            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+                cursor.execute('SELECT id FROM employees WHERE name = %s', (name,))
+            else:
+                cursor.execute('SELECT id FROM employees WHERE name = ?', (name,))
+                
             if cursor.fetchone():
                 flash('Employee already exists', 'danger')
                 return redirect(url_for('add_employee'))
@@ -455,7 +470,13 @@ def edit_employee(employee_id):
     # Get the employee from the database
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM employees WHERE id = ?', (employee_id,))
+        
+        # Check if PostgreSQL connection
+        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+            cursor.execute('SELECT * FROM employees WHERE id = %s', (employee_id,))
+        else:
+            cursor.execute('SELECT * FROM employees WHERE id = ?', (employee_id,))
+            
         row = cursor.fetchone()
         employee = dict(row) if row else None
     
@@ -505,7 +526,13 @@ def delete_employee(employee_id):
     # Get employees and remove the one with matching ID
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('DELETE FROM employees WHERE id = ?', (employee_id,))
+        
+        # Check if PostgreSQL connection
+        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+            cursor.execute('DELETE FROM employees WHERE id = %s', (employee_id,))
+        else:
+            cursor.execute('DELETE FROM employees WHERE id = ?', (employee_id,))
+            
         conn.commit()
     
     flash('Employee deleted successfully', 'success')
@@ -556,10 +583,19 @@ def delete_pay_period(period_id):
     # Delete pay period from database
     with get_db() as conn:
         cursor = conn.cursor()
-        # Delete the pay period
-        cursor.execute('DELETE FROM pay_periods WHERE id = ?', (period_id,))
-        # Delete associated timesheet entries
-        cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
+        
+        # Check if PostgreSQL connection
+        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+            # Delete the pay period
+            cursor.execute('DELETE FROM pay_periods WHERE id = %s', (period_id,))
+            # Delete associated timesheet entries
+            cursor.execute('DELETE FROM timesheet_entries WHERE period_id = %s', (period_id,))
+        else:
+            # Delete the pay period
+            cursor.execute('DELETE FROM pay_periods WHERE id = ?', (period_id,))
+            # Delete associated timesheet entries
+            cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
+            
         conn.commit()
     
     # Delete any associated files (like Excel exports)
@@ -1130,7 +1166,13 @@ def fix_timesheet(period_id):
         # Delete all timesheet entries for this period and recreate an empty structure
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
+            
+            # Check if PostgreSQL connection
+            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+                cursor.execute('DELETE FROM timesheet_entries WHERE period_id = %s', (period_id,))
+            else:
+                cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
+                
             conn.commit()
         
         flash('Timesheet has been reset. Please re-enter your data.', 'warning')
