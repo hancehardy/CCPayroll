@@ -64,6 +64,7 @@ class Employee:
             
             # Check if PostgreSQL connection
             if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+                cursor.execute('SELECT * FROM employees WHERE id = %s', (employee_id,))
             else:
                 cursor.execute('SELECT * FROM employees WHERE id = ?', (employee_id,))
                 
@@ -79,6 +80,7 @@ class Employee:
             
             # Check if PostgreSQL connection
             if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+                cursor.execute('SELECT * FROM employees WHERE name = %s', (name,))
             else:
                 cursor.execute('SELECT * FROM employees WHERE name = ?', (name,))
                 
@@ -99,6 +101,7 @@ class Employee:
                     INSERT INTO employees (
                         id, name, rate, install_crew, position, 
                         pay_type, salary, commission_rate
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         name = EXCLUDED.name,
                         rate = EXCLUDED.rate,
