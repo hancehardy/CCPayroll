@@ -42,9 +42,10 @@
                                 <p>Export payroll data for a specific pay period to an Excel file.</p>
                                 
                                 <div class="mb-3">
-                                    <label for="export_period" class="form-label">Select Pay Period to Export</label>
-                                    <select class="form-select" id="export_period">
-                                        {% for period in pay_periods|reverse %}
+                                    <label for="period_id" class="form-label">Select Pay Period to Export</label>
+                                    <select class="form-select" id="period_id" name="period_id" required>
+                                        <option value="">Select a Pay Period</option>
+                                        {% for period in pay_periods %}
                                         <option value="{{ period.id }}">{{ period.name }}</option>
                                         {% endfor %}
                                     </select>
@@ -67,7 +68,7 @@
     document.addEventListener('DOMContentLoaded', function() {
         // Handle export button click
         document.getElementById('export_btn').addEventListener('click', function() {
-            const periodId = document.getElementById('export_period').value;
+            const periodId = document.getElementById('period_id').value;
             if (periodId) {
                 window.location.href = '{{ url_for("export_data", period_id="") }}' + periodId;
             }

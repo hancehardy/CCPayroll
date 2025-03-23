@@ -16,6 +16,9 @@ import threading
 import logging
 import random
 
+from ccpayroll.database import get_db, init_db
+from ccpayroll.database.migration import save_timesheet_entry, save_pay_period, migrate_database
+
 app = Flask(__name__)
 app.secret_key = 'creative_closets_payroll_app'
 
@@ -31,7 +34,11 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DATA_FOLDER, exist_ok=True)
 os.makedirs(REPORTS_FOLDER, exist_ok=True)
 
+# Set app config values
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['DATA_FOLDER'] = DATA_FOLDER
+app.config['REPORTS_FOLDER'] = REPORTS_FOLDER
+app.config['DATABASE_PATH'] = DATABASE_PATH
 
 # Configure logging
 logging.basicConfig(
@@ -128,6 +135,10 @@ def init_db():
             project_name TEXT,
             install_days TEXT,
             install TEXT,
+            regular_hours REAL,
+            overtime_hours REAL,
+            job_name TEXT,
+            notes TEXT,
             FOREIGN KEY (period_id) REFERENCES pay_periods(id),
             UNIQUE (period_id, employee_name, day)
         )
@@ -307,7 +318,11 @@ def save_timesheet_entry(period_id, employee_name, day, field, value):
                 'pay': '',
                 'project_name': '',
                 'install_days': '',
-                'install': ''
+                'install': '',
+                'regular_hours': 0,
+                'overtime_hours': 0,
+                'job_name': '',
+                'notes': ''
             }
             # Set the specified field
             fields[field] = value
@@ -316,11 +331,15 @@ def save_timesheet_entry(period_id, employee_name, day, field, value):
             cursor.execute(
                 '''
                 INSERT INTO timesheet_entries 
-                (period_id, employee_name, day, hours, pay, project_name, install_days, install)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (period_id, employee_name, day, hours, pay, project_name, install_days, install,
+                regular_hours, overtime_hours, job_name, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
-                (period_id, employee_name, day, fields['hours'], fields['pay'], 
-                 fields['project_name'], fields['install_days'], fields['install'])
+                (period_id, employee_name, day, 
+                 fields['hours'], fields['pay'], 
+                 fields['project_name'], fields['install_days'], fields['install'],
+                 fields['regular_hours'], fields['overtime_hours'],
+                 fields['job_name'], fields['notes'])
             )
         
         conn.commit()
@@ -934,7 +953,9 @@ def import_data():
                 flash(f'Error importing data: {str(e)}', 'danger')
                 return redirect(url_for('import_data'))
     
-    return render_template('import.html')
+    # Get pay periods to display in the dropdown
+    pay_periods = get_pay_periods()
+    return render_template('import.html', pay_periods=pay_periods)
 
 @app.route('/export/<period_id>')
 def export_data(period_id):
@@ -1149,8 +1170,9 @@ def export_data(period_id):
     # Create DataFrame
     df = pd.DataFrame(data)
     
-    # Save to Excel
-    output_file = os.path.join(app.config['UPLOAD_FOLDER'], f'export_{period["name"]}.xlsx')
+    # Save to Excel - sanitize period name for filename
+    safe_period_name = period["name"].replace('/', '-').replace('\\', '-').replace(':', '-')
+    output_file = os.path.join(app.config['UPLOAD_FOLDER'], f'export_{safe_period_name}.xlsx')
     df.to_excel(output_file, index=False, header=False)
     
     return send_file(output_file, as_attachment=True)
@@ -1316,4 +1338,11 @@ init_db()
 migrate_json_to_db()
 
 if __name__ == '__main__':
+    # Ensure database exists
+    init_db()
+    
+    # Run any necessary migrations within the Flask app context
+    with app.app_context():
+        migrate_database()
+    
     app.run(debug=True, port=5001) 
