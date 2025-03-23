@@ -199,18 +199,37 @@ def save_timesheet_entry(period_id, employee_name, day, field, value):
         cursor = conn.cursor()
         
         # Check if entry exists
-        cursor.execute(
-            'SELECT * FROM timesheet_entries WHERE period_id = ? AND employee_name = ? AND day = ?',
-            (period_id, employee_name, day)
-        )
+        is_postgres = hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2')
+        
+        if is_postgres:
+            # Use numbered parameters for PostgreSQL
+            cursor.execute(
+                'SELECT * FROM timesheet_entries WHERE period_id = %s AND employee_name = %s AND day = %s',
+                (period_id, employee_name, day)
+            )
+        else:
+            # Use question mark parameters for SQLite
+            cursor.execute(
+                'SELECT * FROM timesheet_entries WHERE period_id = ? AND employee_name = ? AND day = ?',
+                (period_id, employee_name, day)
+            )
+            
         existing = cursor.fetchone()
         
         if existing:
             # Update specific field
-            cursor.execute(
-                f'UPDATE timesheet_entries SET {field} = ? WHERE period_id = ? AND employee_name = ? AND day = ?',
-                (value, period_id, employee_name, day)
-            )
+            if is_postgres:
+                # Use numbered parameters and %s placeholder for PostgreSQL
+                cursor.execute(
+                    f'UPDATE timesheet_entries SET {field} = %s WHERE period_id = %s AND employee_name = %s AND day = %s',
+                    (value, period_id, employee_name, day)
+                )
+            else:
+                # Use question mark parameters for SQLite
+                cursor.execute(
+                    f'UPDATE timesheet_entries SET {field} = ? WHERE period_id = ? AND employee_name = ? AND day = ?',
+                    (value, period_id, employee_name, day)
+                )
         else:
             # Default values for all fields
             fields = {
@@ -228,19 +247,36 @@ def save_timesheet_entry(period_id, employee_name, day, field, value):
             fields[field] = value
             
             # Insert new entry
-            cursor.execute(
-                '''
-                INSERT INTO timesheet_entries 
-                (period_id, employee_name, day, hours, pay, project_name, install_days, install,
-                regular_hours, overtime_hours, job_name, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''',
-                (period_id, employee_name, day, 
-                 fields['hours'], fields['pay'], 
-                 fields['project_name'], fields['install_days'], fields['install'],
-                 fields['regular_hours'], fields['overtime_hours'],
-                 fields['job_name'], fields['notes'])
-            )
+            if is_postgres:
+                # Use numbered parameters for PostgreSQL
+                cursor.execute(
+                    '''
+                    INSERT INTO timesheet_entries 
+                    (period_id, employee_name, day, hours, pay, project_name, install_days, install,
+                    regular_hours, overtime_hours, job_name, notes)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ''',
+                    (period_id, employee_name, day, 
+                     fields['hours'], fields['pay'], 
+                     fields['project_name'], fields['install_days'], fields['install'],
+                     fields['regular_hours'], fields['overtime_hours'],
+                     fields['job_name'], fields['notes'])
+                )
+            else:
+                # Use question mark parameters for SQLite
+                cursor.execute(
+                    '''
+                    INSERT INTO timesheet_entries 
+                    (period_id, employee_name, day, hours, pay, project_name, install_days, install,
+                    regular_hours, overtime_hours, job_name, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''',
+                    (period_id, employee_name, day, 
+                     fields['hours'], fields['pay'], 
+                     fields['project_name'], fields['install_days'], fields['install'],
+                     fields['regular_hours'], fields['overtime_hours'],
+                     fields['job_name'], fields['notes'])
+                )
         
         conn.commit()
 

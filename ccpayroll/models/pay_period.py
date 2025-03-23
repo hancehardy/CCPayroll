@@ -50,7 +50,13 @@ class PayPeriod:
         """Get a pay period by ID"""
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT * FROM pay_periods WHERE id = ?', (period_id,))
+            
+            # Check if PostgreSQL connection
+            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+                cursor.execute('SELECT * FROM pay_periods WHERE id = %s', (period_id,))
+            else:
+                cursor.execute('SELECT * FROM pay_periods WHERE id = ?', (period_id,))
+                
             row = cursor.fetchone()
         
         return cls.from_dict(dict(row)) if row else None
@@ -59,20 +65,47 @@ class PayPeriod:
         """Save this pay period to the database"""
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                'INSERT OR REPLACE INTO pay_periods (id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
-                (self.id, self.name, self.start_date, self.end_date)
-            )
+            
+            # Check if PostgreSQL connection
+            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+                # PostgreSQL syntax
+                cursor.execute(
+                    '''
+                    INSERT INTO pay_periods (id, name, start_date, end_date) 
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        start_date = EXCLUDED.start_date,
+                        end_date = EXCLUDED.end_date
+                    ''',
+                    (self.id, self.name, self.start_date, self.end_date)
+                )
+            else:
+                # SQLite syntax
+                cursor.execute(
+                    'INSERT OR REPLACE INTO pay_periods (id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
+                    (self.id, self.name, self.start_date, self.end_date)
+                )
+                
             conn.commit()
     
     def delete(self) -> None:
         """Delete this pay period and all associated timesheet entries"""
         with get_db() as conn:
             cursor = conn.cursor()
-            # Delete associated timesheet entries
-            cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (self.id,))
-            # Delete the pay period
-            cursor.execute('DELETE FROM pay_periods WHERE id = ?', (self.id,))
+            
+            # Check if PostgreSQL connection
+            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+                # Delete associated timesheet entries
+                cursor.execute('DELETE FROM timesheet_entries WHERE period_id = %s', (self.id,))
+                # Delete the pay period
+                cursor.execute('DELETE FROM pay_periods WHERE id = %s', (self.id,))
+            else:
+                # Delete associated timesheet entries
+                cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (self.id,))
+                # Delete the pay period
+                cursor.execute('DELETE FROM pay_periods WHERE id = ?', (self.id,))
+                
             conn.commit()
     
     def get_days(self) -> List[Dict[str, str]]:
