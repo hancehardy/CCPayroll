@@ -86,10 +86,31 @@ def row_to_dict(row):
         # If direct conversion fails, try to access as sequence or mapping
         try:
             # For psycopg2 RealDictRow objects
-            return {k: row[k] for k in row.keys()} if hasattr(row, 'keys') else dict(row.items())
+            if hasattr(row, 'keys'):
+                return {k: row[k] for k in row.keys()}
+            elif hasattr(row, 'items'):
+                return dict(row.items())
+            else:
+                # Last resort: try to access fields by name explicitly
+                # Include common fields we know should exist
+                result = {}
+                for field in ['id', 'name', 'rate', 'install_crew', 'position', 
+                              'pay_type', 'salary', 'commission_rate']:
+                    try:
+                        result[field] = getattr(row, field, None)
+                    except (AttributeError, IndexError):
+                        try:
+                            result[field] = row[field] if field in row else None
+                        except (TypeError, KeyError):
+                            result[field] = None
+                return result
         except (AttributeError, ValueError, TypeError):
-            # Last resort: treat as a sequence of key-value pairs if possible
-            return dict((str(i), v) for i, v in enumerate(row))
+            # Absolute last resort: treat as a sequence of values
+            try:
+                return dict((str(i), v) for i, v in enumerate(row))
+            except:
+                # If all else fails, return an empty dict
+                return {}
 
 def get_pay_periods():
     """Get all pay periods from the database"""
