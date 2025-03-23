@@ -76,13 +76,28 @@ def teardown_db(exception):
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def row_to_dict(row):
+    """Safely convert a database row to a dictionary regardless of adapter type"""
+    if isinstance(row, dict):
+        return row
+    try:
+        return dict(row)
+    except (ValueError, TypeError):
+        # If direct conversion fails, try to access as sequence or mapping
+        try:
+            # For psycopg2 RealDictRow objects
+            return {k: row[k] for k in row.keys()} if hasattr(row, 'keys') else dict(row.items())
+        except (AttributeError, ValueError, TypeError):
+            # Last resort: treat as a sequence of key-value pairs if possible
+            return dict((str(i), v) for i, v in enumerate(row))
+
 def get_pay_periods():
     """Get all pay periods from the database"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM pay_periods ORDER BY start_date DESC')
         rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [row_to_dict(row) for row in rows]
 
 def save_pay_period(period_data):
     """Save a pay period to the database"""
@@ -107,7 +122,7 @@ def get_employees():
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM employees')
         rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [row_to_dict(row) for row in rows]
 
 def save_employee(employee_data):
     """Save an employee to the database"""
@@ -387,7 +402,7 @@ def edit_employee(employee_id):
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM employees WHERE id = %s', (employee_id,))
         row = cursor.fetchone()
-        employee = dict(row) if row else None
+        employee = row_to_dict(row) if row else None
     
     if not employee:
         flash('Employee not found', 'danger')
