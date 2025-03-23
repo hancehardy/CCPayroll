@@ -11,34 +11,23 @@ from io import BytesIO
 import base64
 import uuid
 import sqlite3
+from contextlib import contextmanager
 import threading
 import logging
 import random
 
-from ccpayroll.database import get_db, init_db
+from ccpayroll.database import get_db, init_db, get_adapter_name
 from ccpayroll.database.migration import save_timesheet_entry, save_pay_period, migrate_database
-from ccpayroll.models.employee import Employee
-from ccpayroll.models.pay_period import PayPeriod
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'f34029fc4928fc43982f98c98c')  # Secret key for sessions
-
-# Initialize database within app context
-with app.app_context():
-    from ccpayroll.database import init_db
-    init_db()
-
-# Configure the app
-basedir = os.path.abspath(os.path.dirname(__file__))
-DATA_FOLDER = os.path.join(basedir, 'data')
-TEMPLATES_FOLDER = os.path.join(basedir, 'templates')
-STATIC_FOLDER = os.path.join(basedir, 'static')
-os.makedirs(DATA_FOLDER, exist_ok=True)
+app.secret_key = 'creative_closets_payroll_app'
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
+DATA_FOLDER = 'data'
 REPORTS_FOLDER = 'static/reports'
+DATABASE_PATH = os.path.join(DATA_FOLDER, 'payroll.db')
 
 # Create necessary directories
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -49,6 +38,12 @@ os.makedirs(REPORTS_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['DATA_FOLDER'] = DATA_FOLDER
 app.config['REPORTS_FOLDER'] = REPORTS_FOLDER
+app.config['DATABASE_PATH'] = DATABASE_PATH
+
+# Check for required environment variables for PostgreSQL
+if 'DATABASE_URL' not in os.environ:
+    logging.warning("DATABASE_URL environment variable not set. "
+                  "PostgreSQL adapter will not work correctly.")
 
 # Configure logging
 logging.basicConfig(
@@ -63,19 +58,167 @@ logger = logging.getLogger('payroll')
 
 # Thread-local storage for database connections
 db_local = threading.local()
-db_connections = {}
+db_connections = {}  # Track connections for monitoring
 
-# Initialize database at startup
-with app.app_context():
-    init_db()
-    migrate_database()
+# Database setup
+def init_db():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Create pay_periods table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pay_periods (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL
+        )
+        ''')
+        
+        # Check if employees table exists and if we need to migrate
+        cursor.execute("PRAGMA table_info(employees)")
+        columns = cursor.fetchall()
+        column_names = [column['name'] for column in columns]
+        
+        if not columns:
+            # Create employees table if it doesn't exist
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS employees (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                rate REAL,
+                install_crew INTEGER DEFAULT 0,
+                position TEXT,
+                pay_type TEXT DEFAULT 'hourly',
+                salary REAL,
+                commission_rate REAL
+            )
+            ''')
+        elif 'installer_role' in column_names and 'position' not in column_names:
+            # Migrate from installer_role to position
+            logger.info("Migrating employees table from installer_role to position")
+            # Create new table with updated schema
+            cursor.execute('''
+            CREATE TABLE employees_new (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                rate REAL,
+                install_crew INTEGER DEFAULT 0,
+                position TEXT,
+                pay_type TEXT DEFAULT 'hourly',
+                salary REAL,
+                commission_rate REAL
+            )
+            ''')
+            # Copy data from old table to new table
+            cursor.execute('''
+            INSERT INTO employees_new (id, name, rate, install_crew, position)
+            SELECT id, name, rate, install_crew, installer_role FROM employees
+            ''')
+            # Drop old table
+            cursor.execute('DROP TABLE employees')
+            # Rename new table to employees
+            cursor.execute('ALTER TABLE employees_new RENAME TO employees')
+            logger.info("Migration complete")
+        elif 'pay_type' not in column_names:
+            # Add pay_type, salary, and commission_rate columns if they don't exist
+            logger.info("Adding pay_type, salary, and commission_rate columns to employees table")
+            cursor.execute('ALTER TABLE employees ADD COLUMN pay_type TEXT DEFAULT "hourly"')
+            cursor.execute('ALTER TABLE employees ADD COLUMN salary REAL')
+            cursor.execute('ALTER TABLE employees ADD COLUMN commission_rate REAL')
+            logger.info("Columns added successfully")
+        
+        # Create timesheet table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS timesheet_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            period_id TEXT NOT NULL,
+            employee_name TEXT NOT NULL,
+            day TEXT NOT NULL,
+            hours TEXT,
+            pay TEXT,
+            project_name TEXT,
+            install_days TEXT,
+            install TEXT,
+            regular_hours REAL,
+            overtime_hours REAL,
+            job_name TEXT,
+            notes TEXT,
+            FOREIGN KEY (period_id) REFERENCES pay_periods(id),
+            UNIQUE (period_id, employee_name, day)
+        )
+        ''')
+        
+        conn.commit()
 
-def allowed_file(filename):
-    """Check if a file has an allowed extension"""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+@contextmanager
+def get_db():
+    """Context manager for getting database connection"""
+    thread_id = threading.get_ident()
+    
+    if not hasattr(db_local, 'connection'):
+        db_local.connection = sqlite3.connect(DATABASE_PATH)
+        db_local.connection.row_factory = sqlite3.Row
+        db_connections[thread_id] = {
+            'created_at': datetime.now(),
+            'last_used': datetime.now()
+        }
+        logger.info(f"New DB connection created for thread {thread_id}")
+    else:
+        # Update last used time
+        if thread_id in db_connections:
+            db_connections[thread_id]['last_used'] = datetime.now()
+    
+    try:
+        yield db_local.connection
+    except Exception as e:
+        db_local.connection.rollback()
+        logger.error(f"Database error in thread {thread_id}: {str(e)}")
+        raise
+    finally:
+        # Keep connection open for this thread's lifetime
+        pass
+
+def close_db():
+    """Close database connection if it exists"""
+    thread_id = threading.get_ident()
+    
+    if hasattr(db_local, 'connection'):
+        db_local.connection.close()
+        if thread_id in db_connections:
+            del db_connections[thread_id]
+        del db_local.connection
+        logger.info(f"Closed DB connection for thread {thread_id}")
+
+def monitor_db_connections():
+    """Log information about current database connections"""
+    now = datetime.now()
+    for thread_id, info in list(db_connections.items()):
+        age = (now - info['created_at']).total_seconds()
+        idle_time = (now - info['last_used']).total_seconds()
+        
+        if idle_time > 300:  # 5 minutes idle
+            logger.warning(f"Thread {thread_id} has idle DB connection for {idle_time:.1f} seconds")
+        
+        if age > 3600:  # 1 hour old
+            logger.info(f"Thread {thread_id} has DB connection open for {age:.1f} seconds")
+
+@app.before_request
+def before_request():
+    """Run before each request"""
+    # Periodically monitor database connections
+    if random.random() < 0.01:  # 1% chance to run on each request
+        monitor_db_connections()
+
+@app.teardown_appcontext
+def teardown_db(exception):
+    """Close database connection at the end of the request"""
+    close_db()
 
 # Helper functions
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 def get_pay_periods():
     """Get all pay periods from the database"""
     with get_db() as conn:
@@ -88,28 +231,10 @@ def save_pay_period(period_data):
     """Save a pay period to the database"""
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Check if PostgreSQL connection
-        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-            # PostgreSQL syntax
-            cursor.execute(
-                '''
-                INSERT INTO pay_periods (id, name, start_date, end_date) 
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    start_date = EXCLUDED.start_date,
-                    end_date = EXCLUDED.end_date
-                ''',
-                (period_data['id'], period_data['name'], period_data['start_date'], period_data['end_date'])
-            )
-        else:
-            # SQLite syntax
-            cursor.execute(
-                'INSERT OR REPLACE INTO pay_periods (id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
-                (period_data['id'], period_data['name'], period_data['start_date'], period_data['end_date'])
-            )
-        
+        cursor.execute(
+            'INSERT OR REPLACE INTO pay_periods (id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
+            (period_data['id'], period_data['name'], period_data['start_date'], period_data['end_date'])
+        )
         conn.commit()
 
 def get_employees():
@@ -124,76 +249,34 @@ def save_employee(employee_data):
     """Save an employee to the database"""
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Check if PostgreSQL connection
-        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-            # PostgreSQL syntax
-            cursor.execute(
-                '''
-                INSERT INTO employees (
-                    id, name, rate, install_crew, position, 
-                    pay_type, salary, commission_rate
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    rate = EXCLUDED.rate,
-                    install_crew = EXCLUDED.install_crew,
-                    position = EXCLUDED.position,
-                    pay_type = EXCLUDED.pay_type,
-                    salary = EXCLUDED.salary,
-                    commission_rate = EXCLUDED.commission_rate
-                ''',
-                (
-                    employee_data['id'], 
-                    employee_data['name'], 
-                    employee_data.get('rate'), 
-                    employee_data['install_crew'], 
-                    employee_data['position'],
-                    employee_data.get('pay_type', 'hourly'),
-                    employee_data.get('salary'),
-                    employee_data.get('commission_rate')
-                )
+        cursor.execute(
+            '''
+            INSERT OR REPLACE INTO employees (
+                id, name, rate, install_crew, position, 
+                pay_type, salary, commission_rate
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                employee_data['id'], 
+                employee_data['name'], 
+                employee_data.get('rate'), 
+                employee_data['install_crew'], 
+                employee_data['position'],
+                employee_data.get('pay_type', 'hourly'),
+                employee_data.get('salary'),
+                employee_data.get('commission_rate')
             )
-        else:
-            # SQLite syntax
-            cursor.execute(
-                '''
-                INSERT OR REPLACE INTO employees (
-                    id, name, rate, install_crew, position, 
-                    pay_type, salary, commission_rate
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''',
-                (
-                    employee_data['id'], 
-                    employee_data['name'], 
-                    employee_data.get('rate'), 
-                    employee_data['install_crew'], 
-                    employee_data['position'],
-                    employee_data.get('pay_type', 'hourly'),
-                    employee_data.get('salary'),
-                    employee_data.get('commission_rate')
-                )
-            )
-        
+        )
         conn.commit()
 
 def get_timesheet(period_id):
     """Get timesheet data for a specific pay period"""
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Check if PostgreSQL connection
-        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-            cursor.execute(
-                'SELECT employee_name, day, hours, pay, project_name, install_days, install FROM timesheet_entries WHERE period_id = %s',
-                (period_id,)
-            )
-        else:
-            cursor.execute(
-                'SELECT employee_name, day, hours, pay, project_name, install_days, install FROM timesheet_entries WHERE period_id = ?',
-                (period_id,)
-            )
-            
+        cursor.execute(
+            'SELECT employee_name, day, hours, pay, project_name, install_days, install FROM timesheet_entries WHERE period_id = ?',
+            (period_id,)
+        )
         rows = cursor.fetchall()
         
         # Restructure data to match the original format
@@ -221,37 +304,18 @@ def save_timesheet_entry(period_id, employee_name, day, field, value):
         cursor = conn.cursor()
         
         # Check if entry exists
-        is_postgres = hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2')
-        
-        if is_postgres:
-            # Use numbered parameters for PostgreSQL
-            cursor.execute(
-                'SELECT * FROM timesheet_entries WHERE period_id = %s AND employee_name = %s AND day = %s',
-                (period_id, employee_name, day)
-            )
-        else:
-            # Use question mark parameters for SQLite
-            cursor.execute(
-                'SELECT * FROM timesheet_entries WHERE period_id = ? AND employee_name = ? AND day = ?',
-                (period_id, employee_name, day)
-            )
-            
+        cursor.execute(
+            'SELECT * FROM timesheet_entries WHERE period_id = ? AND employee_name = ? AND day = ?',
+            (period_id, employee_name, day)
+        )
         existing = cursor.fetchone()
         
         if existing:
             # Update specific field
-            if is_postgres:
-                # Use numbered parameters and %s placeholder for PostgreSQL
-                cursor.execute(
-                    f'UPDATE timesheet_entries SET {field} = %s WHERE period_id = %s AND employee_name = %s AND day = %s',
-                    (value, period_id, employee_name, day)
-                )
-            else:
-                # Use question mark parameters for SQLite
-                cursor.execute(
-                    f'UPDATE timesheet_entries SET {field} = ? WHERE period_id = ? AND employee_name = ? AND day = ?',
-                    (value, period_id, employee_name, day)
-                )
+            cursor.execute(
+                f'UPDATE timesheet_entries SET {field} = ? WHERE period_id = ? AND employee_name = ? AND day = ?',
+                (value, period_id, employee_name, day)
+            )
         else:
             # Default values for all fields
             fields = {
@@ -269,36 +333,19 @@ def save_timesheet_entry(period_id, employee_name, day, field, value):
             fields[field] = value
             
             # Insert new entry
-            if is_postgres:
-                # Use numbered parameters for PostgreSQL
-                cursor.execute(
-                    '''
-                    INSERT INTO timesheet_entries 
-                    (period_id, employee_name, day, hours, pay, project_name, install_days, install,
-                    regular_hours, overtime_hours, job_name, notes)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ''',
-                    (period_id, employee_name, day, 
-                     fields['hours'], fields['pay'], 
-                     fields['project_name'], fields['install_days'], fields['install'],
-                     fields['regular_hours'], fields['overtime_hours'],
-                     fields['job_name'], fields['notes'])
-                )
-            else:
-                # Use question mark parameters for SQLite
-                cursor.execute(
-                    '''
-                    INSERT INTO timesheet_entries 
-                    (period_id, employee_name, day, hours, pay, project_name, install_days, install,
-                    regular_hours, overtime_hours, job_name, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''',
-                    (period_id, employee_name, day, 
-                     fields['hours'], fields['pay'], 
-                     fields['project_name'], fields['install_days'], fields['install'],
-                     fields['regular_hours'], fields['overtime_hours'],
-                     fields['job_name'], fields['notes'])
-                )
+            cursor.execute(
+                '''
+                INSERT INTO timesheet_entries 
+                (period_id, employee_name, day, hours, pay, project_name, install_days, install,
+                regular_hours, overtime_hours, job_name, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (period_id, employee_name, day, 
+                 fields['hours'], fields['pay'], 
+                 fields['project_name'], fields['install_days'], fields['install'],
+                 fields['regular_hours'], fields['overtime_hours'],
+                 fields['job_name'], fields['notes'])
+            )
         
         conn.commit()
 
@@ -435,23 +482,26 @@ def add_employee():
             flash('Employee name is required', 'danger')
             return redirect(url_for('add_employee'))
         
-        # Check if employee already exists using Employee model
-        existing = Employee.get_by_name(name)
-        if existing:
-            flash('Employee already exists', 'danger')
-            return redirect(url_for('add_employee'))
+        # Check if employee already exists
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id FROM employees WHERE name = ?', (name,))
+            if cursor.fetchone():
+                flash('Employee already exists', 'danger')
+                return redirect(url_for('add_employee'))
         
-        # Add new employee using Employee model
-        employee = Employee(
-            name=name,
-            pay_type=pay_type,
-            rate=float(rate) if rate else None,
-            salary=float(salary) if salary else None,
-            commission_rate=float(commission_rate) if commission_rate else None,
-            install_crew=install_crew,
-            position=position
-        )
-        employee.save()
+        # Add new employee
+        employee_data = {
+            'id': str(uuid.uuid4()),
+            'name': name,
+            'pay_type': pay_type,
+            'rate': rate,
+            'salary': salary,
+            'commission_rate': commission_rate,
+            'install_crew': install_crew,
+            'position': position
+        }
+        save_employee(employee_data)
         
         flash('Employee added successfully', 'success')
         return redirect(url_for('employees'))
@@ -463,13 +513,7 @@ def edit_employee(employee_id):
     # Get the employee from the database
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Check if PostgreSQL connection
-        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-            cursor.execute('SELECT * FROM employees WHERE id = %s', (employee_id,))
-        else:
-            cursor.execute('SELECT * FROM employees WHERE id = ?', (employee_id,))
-            
+        cursor.execute('SELECT * FROM employees WHERE id = ?', (employee_id,))
         row = cursor.fetchone()
         employee = dict(row) if row else None
     
@@ -519,13 +563,7 @@ def delete_employee(employee_id):
     # Get employees and remove the one with matching ID
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Check if PostgreSQL connection
-        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-            cursor.execute('DELETE FROM employees WHERE id = %s', (employee_id,))
-        else:
-            cursor.execute('DELETE FROM employees WHERE id = ?', (employee_id,))
-            
+        cursor.execute('DELETE FROM employees WHERE id = ?', (employee_id,))
         conn.commit()
     
     flash('Employee deleted successfully', 'success')
@@ -557,14 +595,15 @@ def add_pay_period():
                 app.logger.error(f"Error generating pay period name: {str(e)}")
                 name = f"Pay Period {datetime.now().strftime('%m/%d/%y')}"
         
-        # Create and save pay period using the PayPeriod model
-        period = PayPeriod(
-            name=name,
-            start_date=start_date,
-            end_date=end_date
-        )
-        period.save()
+        # Create pay period
+        period_data = {
+            'id': str(uuid.uuid4()),
+            'name': name,
+            'start_date': start_date,
+            'end_date': end_date
+        }
         
+        save_pay_period(period_data)
         flash('Pay period added successfully', 'success')
         return redirect(url_for('pay_periods'))
     
@@ -575,19 +614,10 @@ def delete_pay_period(period_id):
     # Delete pay period from database
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Check if PostgreSQL connection
-        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-            # Delete the pay period
-            cursor.execute('DELETE FROM pay_periods WHERE id = %s', (period_id,))
-            # Delete associated timesheet entries
-            cursor.execute('DELETE FROM timesheet_entries WHERE period_id = %s', (period_id,))
-        else:
-            # Delete the pay period
-            cursor.execute('DELETE FROM pay_periods WHERE id = ?', (period_id,))
-            # Delete associated timesheet entries
-            cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
-            
+        # Delete the pay period
+        cursor.execute('DELETE FROM pay_periods WHERE id = ?', (period_id,))
+        # Delete associated timesheet entries
+        cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
         conn.commit()
     
     # Delete any associated files (like Excel exports)
@@ -1158,13 +1188,7 @@ def fix_timesheet(period_id):
         # Delete all timesheet entries for this period and recreate an empty structure
         with get_db() as conn:
             cursor = conn.cursor()
-            
-            # Check if PostgreSQL connection
-            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-                cursor.execute('DELETE FROM timesheet_entries WHERE period_id = %s', (period_id,))
-            else:
-                cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
-                
+            cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (period_id,))
             conn.commit()
         
         flash('Timesheet has been reset. Please re-enter your data.', 'warning')
@@ -1174,5 +1198,163 @@ def fix_timesheet(period_id):
     
     return redirect(url_for('timesheet', period_id=period_id))
 
+# Initialize with sample data if empty
+if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
+    sample_employees = [
+        # Hourly employees - installers
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'VICTOR LAZO',
+            'pay_type': 'hourly',
+            'rate': '20',
+            'salary': None,
+            'commission_rate': None,
+            'install_crew': 1,
+            'position': 'lead'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'SAMUEL CASTILLO',
+            'pay_type': 'hourly',
+            'rate': '18',
+            'salary': None,
+            'commission_rate': None,
+            'install_crew': 1,
+            'position': 'assistant'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'JOSE MEDINA',
+            'pay_type': 'hourly',
+            'rate': '22',
+            'salary': None,
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'none'
+        },
+        # Salary employees
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'ROBERT SMITH',
+            'pay_type': 'salary',
+            'rate': None,
+            'salary': '85000',
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'project_manager'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'LISA JOHNSON',
+            'pay_type': 'salary',
+            'rate': None,
+            'salary': '150000',
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'ceo'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'MICHAEL CHEN',
+            'pay_type': 'salary',
+            'rate': None,
+            'salary': '95000',
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'engineer'
+        },
+        # Commission employees
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'SARAH DAVIS',
+            'pay_type': 'commission',
+            'rate': None,
+            'salary': None,
+            'commission_rate': '12',
+            'install_crew': 0,
+            'position': 'salesman'
+        }
+    ]
+    # Save each employee individually
+    for employee in sample_employees:
+        save_employee(employee)
+
+# Initialize database and migrate data from JSON if needed
+def migrate_json_to_db():
+    """Migrate data from JSON files to the SQLite database"""
+    # Check if we need to migrate (if tables are empty)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM pay_periods')
+        pay_periods_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM employees')
+        employees_count = cursor.fetchone()[0]
+        
+        # If we already have data, skip migration
+        if pay_periods_count > 0 or employees_count > 0:
+            return
+        
+        # Migrate pay periods
+        if os.path.exists(os.path.join(DATA_FOLDER, 'pay_periods.json')):
+            try:
+                with open(os.path.join(DATA_FOLDER, 'pay_periods.json'), 'r') as f:
+                    pay_periods = json.load(f)
+                    for period in pay_periods:
+                        save_pay_period(period)
+                app.logger.info("Migrated pay periods from JSON to database")
+            except Exception as e:
+                app.logger.error(f"Error migrating pay periods: {str(e)}")
+        
+        # Migrate employees
+        if os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
+            try:
+                with open(os.path.join(DATA_FOLDER, 'employees.json'), 'r') as f:
+                    employees = json.load(f)
+                    for employee in employees:
+                        save_employee(employee)
+                app.logger.info("Migrated employees from JSON to database")
+            except Exception as e:
+                app.logger.error(f"Error migrating employees: {str(e)}")
+        
+        # Migrate timesheets
+        for filename in os.listdir(DATA_FOLDER):
+            if filename.startswith('timesheet_') and filename.endswith('.json'):
+                try:
+                    period_id = filename.replace('timesheet_', '').replace('.json', '')
+                    
+                    with open(os.path.join(DATA_FOLDER, filename), 'r') as f:
+                        timesheet_data = json.load(f)
+                        
+                        for employee_name, days in timesheet_data.items():
+                            for day, data in days.items():
+                                for field, value in data.items():
+                                    if value:  # Only save non-empty values
+                                        save_timesheet_entry(period_id, employee_name, day, field, value)
+                    
+                    app.logger.info(f"Migrated timesheet {filename} to database")
+                except Exception as e:
+                    app.logger.error(f"Error migrating timesheet {filename}: {str(e)}")
+
+# Initialize the database
+from ccpayroll.database import init_app
+# Use 'sqlite' or 'postgresql' as adapter
+init_app(app, adapter='postgresql')
+
+@app.route('/info')
+def app_info():
+    return jsonify({
+        'version': '1.0.0',
+        'database_adapter': get_adapter_name(),
+        'environment': os.environ.get('FLASK_ENV', 'production')
+    })
+
 if __name__ == '__main__':
+    # Ensure database exists
+    init_db()
+    
+    # Run any necessary migrations within the Flask app context
+    with app.app_context():
+        migrate_database()
+    
     app.run(debug=True, port=5001) 
