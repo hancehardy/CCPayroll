@@ -143,7 +143,18 @@ def get_employees():
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM employees')
         rows = cursor.fetchall()
-        return [row_to_dict(row) for row in rows]
+        employees = []
+        for row in rows:
+            employee = row_to_dict(row)
+            # Ensure each employee has an id field
+            if 'id' not in employee and hasattr(row, 'id'):
+                employee['id'] = row.id
+            elif 'id' not in employee and isinstance(row, (list, tuple)) and len(row) > 0:
+                employee['id'] = row[0]  # Assume first column is id
+            elif 'id' not in employee:
+                employee['id'] = str(uuid.uuid4())  # Last resort: generate a new id
+            employees.append(employee)
+        return employees
 
 def save_employee(employee_data):
     """Save an employee to the database"""
@@ -367,6 +378,13 @@ def index():
 @app.route('/employees')
 def employees():
     employees_list = get_employees()
+    # Add debugging to check each employee has an id
+    for i, emp in enumerate(employees_list):
+        app.logger.info(f"Employee {i}: {emp}")
+        if 'id' not in emp:
+            app.logger.error(f"Employee {i} is missing id field: {emp}")
+            # Try to fix it by adding a dummy ID
+            emp['id'] = str(uuid.uuid4())
     return render_template('employees.html', employees=employees_list)
 
 @app.route('/employees/add', methods=['GET', 'POST'])
