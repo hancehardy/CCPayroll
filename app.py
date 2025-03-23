@@ -52,12 +52,9 @@ logger = logging.getLogger('payroll')
 db_local = threading.local()
 db_connections = {}
 
-# Initialize database
-@app.before_first_request
-def initialize_database():
-    """Initialize the database when the app starts"""
+# Initialize database at startup
+with app.app_context():
     init_db()
-    # Apply any pending migrations
     migrate_database()
 
 def allowed_file(filename):
