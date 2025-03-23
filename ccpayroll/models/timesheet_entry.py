@@ -18,6 +18,10 @@ class TimesheetEntry:
     project_name: str = ""
     install_days: str = ""
     install: str = ""
+    regular_hours: float = 0.0
+    overtime_hours: float = 0.0
+    job_name: str = ""
+    notes: str = ""
     id: int = None
     
     def to_dict(self) -> Dict[str, Any]:
@@ -31,7 +35,11 @@ class TimesheetEntry:
             'pay': self.pay,
             'project_name': self.project_name,
             'install_days': self.install_days,
-            'install': self.install
+            'install': self.install,
+            'regular_hours': self.regular_hours,
+            'overtime_hours': self.overtime_hours,
+            'job_name': self.job_name,
+            'notes': self.notes
         }
     
     @classmethod
@@ -46,7 +54,11 @@ class TimesheetEntry:
             pay=data.get('pay', ''),
             project_name=data.get('project_name', ''),
             install_days=data.get('install_days', ''),
-            install=data.get('install', '')
+            install=data.get('install', ''),
+            regular_hours=float(data.get('regular_hours', 0)),
+            overtime_hours=float(data.get('overtime_hours', 0)),
+            job_name=data.get('job_name', ''),
+            notes=data.get('notes', '')
         )
     
     @classmethod
@@ -84,8 +96,8 @@ class TimesheetEntry:
                 cursor.execute(
                     '''
                     INSERT INTO timesheet_entries 
-                    (period_id, employee_name, day, hours, pay, project_name, install_days, install) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (period_id, employee_name, day, hours, pay, project_name, install_days, install, regular_hours, overtime_hours, job_name, notes) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''',
                     (
                         self.period_id, 
@@ -95,7 +107,11 @@ class TimesheetEntry:
                         self.pay, 
                         self.project_name, 
                         self.install_days, 
-                        self.install
+                        self.install,
+                        self.regular_hours,
+                        self.overtime_hours,
+                        self.job_name,
+                        self.notes
                     )
                 )
                 self.id = cursor.lastrowid
@@ -104,7 +120,7 @@ class TimesheetEntry:
                     '''
                     UPDATE timesheet_entries SET
                     period_id = ?, employee_name = ?, day = ?, hours = ?, pay = ?, 
-                    project_name = ?, install_days = ?, install = ?
+                    project_name = ?, install_days = ?, install = ?, regular_hours = ?, overtime_hours = ?, job_name = ?, notes = ?
                     WHERE id = ?
                     ''',
                     (
@@ -116,6 +132,10 @@ class TimesheetEntry:
                         self.project_name, 
                         self.install_days, 
                         self.install,
+                        self.regular_hours,
+                        self.overtime_hours,
+                        self.job_name,
+                        self.notes,
                         self.id
                     )
                 )
@@ -130,19 +150,20 @@ class TimesheetEntry:
     
     @staticmethod
     def get_total_hours_for_period(period_id: str, employee_id: str) -> Dict[str, float]:
-        """Get total hours for an employee in a pay period"""
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                '''
-                SELECT SUM(CAST(hours AS REAL)) as total_hours
-                FROM timesheet_entries 
-                WHERE period_id = ? AND employee_name = ?
-                ''',
-                (period_id, employee_id)
-            )
-            result = cursor.fetchone()
+        """Get total hours for an employee in a pay period
         
-        if result and result['total_hours']:
-            return float(result['total_hours'] or 0)
-        return 0.0 
+        Returns a dictionary with 'regular' and 'overtime' hours
+        """
+        total_hours = {'regular': 0.0, 'overtime': 0.0}
+        
+        entries = TimesheetEntry.get_by_period_and_employee(period_id, employee_id)
+        
+        for entry in entries:
+            # Check if hours field has a value
+            if entry.hours and entry.hours.strip():
+                try:
+                    total_hours['regular'] += float(entry.hours)
+                except (ValueError, TypeError):
+                    pass
+        
+        return total_hours 

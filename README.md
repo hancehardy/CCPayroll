@@ -131,4 +131,55 @@ No manual migration steps are required. Your existing data will be preserved.
 If you experience any issues after migration:
 
 1. Check the `data/payroll.log` file for error messages
-2. Use the `/fix-timesheet/<period_id>` route to reset a specific timesheet if needed 
+2. Use the `/fix-timesheet/<period_id>` route to reset a specific timesheet if needed
+
+## Heroku Deployment
+
+To deploy this application to Heroku, follow these steps:
+
+1. Make sure you have the [Heroku CLI](https://devcenter.heroku.com/articles/heroku-cli) installed
+2. Login to Heroku:
+   ```
+   heroku login
+   ```
+
+3. Create a new Heroku app:
+   ```
+   heroku create your-app-name
+   ```
+
+4. Add the PostgreSQL add-on:
+   ```
+   heroku addons:create heroku-postgresql:mini
+   ```
+
+5. Set environment variables:
+   ```
+   heroku config:set SECRET_KEY=your_secure_secret_key
+   ```
+
+6. Deploy the application:
+   ```
+   git add .
+   git commit -m "Prepare for Heroku deployment"
+   git push heroku main
+   ```
+
+7. Initialize the database:
+   ```
+   heroku run python -c "from ccpayroll.database import init_db; init_db()"
+   ```
+
+8. Open the application:
+   ```
+   heroku open
+   ```
+
+### Important Notes
+
+- The app uses PostgreSQL on Heroku instead of SQLite
+- Local file uploads are not persistent on Heroku due to its ephemeral filesystem. For production use, consider using a service like AWS S3 for file storage.
+- You might need to scale your dyno:
+  ```
+  heroku ps:scale web=1
+  ``` 

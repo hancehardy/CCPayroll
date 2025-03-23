@@ -107,12 +107,31 @@ class Employee:
             cursor.execute('DELETE FROM employees WHERE id = ?', (self.id,))
             conn.commit()
     
-    def calculate_pay(self, hours: float) -> float:
-        """Calculate pay based on hours and pay type"""
+    def calculate_pay(self, regular_hours: float, overtime_hours: float = 0) -> Dict[str, float]:
+        """Calculate pay based on hours and pay type
+        
+        Args:
+            regular_hours: Regular hours worked
+            overtime_hours: Overtime hours worked (optional)
+            
+        Returns:
+            Dictionary with regular_pay, overtime_pay, and total_pay
+        """
+        regular_pay = 0.0
+        overtime_pay = 0.0
+        
         if self.pay_type == 'hourly' and self.rate:
-            return hours * self.rate
+            regular_pay = regular_hours * self.rate
+            overtime_pay = overtime_hours * self.rate * 1.5
         elif self.pay_type == 'salary' and self.salary:
             # Weekly salary (annual / 52)
-            return self.salary / 52
+            regular_pay = self.salary / 52
+            overtime_pay = 0.0
         
-        return 0.0 
+        total_pay = regular_pay + overtime_pay
+        
+        return {
+            'regular': regular_pay,
+            'overtime': overtime_pay,
+            'total': total_pay
+        } 

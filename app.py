@@ -20,14 +20,13 @@ from ccpayroll.database import get_db, init_db
 from ccpayroll.database.migration import save_timesheet_entry, save_pay_period, migrate_database
 
 app = Flask(__name__)
-app.secret_key = 'creative_closets_payroll_app'
+app.secret_key = os.environ.get('SECRET_KEY', 'creative_closets_payroll_app')
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 DATA_FOLDER = 'data'
 REPORTS_FOLDER = 'static/reports'
-DATABASE_PATH = os.path.join(DATA_FOLDER, 'payroll.db')
 
 # Create necessary directories
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -38,7 +37,6 @@ os.makedirs(REPORTS_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['DATA_FOLDER'] = DATA_FOLDER
 app.config['REPORTS_FOLDER'] = REPORTS_FOLDER
-app.config['DATABASE_PATH'] = DATABASE_PATH
 
 # Configure logging
 logging.basicConfig(

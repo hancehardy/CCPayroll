@@ -17,7 +17,7 @@
                         <label for="period_id" class="form-label">Select Pay Period</label>
                         <select class="form-select" id="period_id" name="period_id" required>
                             <option value="all">All Pay Periods</option>
-                            {% for period in pay_periods|reverse %}
+                            {% for period in pay_periods %}
                             <option value="{{ period.id }}">{{ period.name }}</option>
                             {% endfor %}
                         </select>

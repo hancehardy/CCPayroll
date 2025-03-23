@@ -25,7 +25,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for period in pay_periods|reverse %}
+                            {% for period in pay_periods %}
                             <tr>
                                 <td>{{ period.name }}</td>
                                 <td>{{ period.start_date }}</td>

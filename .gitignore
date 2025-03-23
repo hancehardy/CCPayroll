@@ -48,4 +48,8 @@ uploads/
 data/
 static/reports/
 *.xlsx
-*.xls 
+*.xls
+
+# Heroku specific
+.env
+*.db 

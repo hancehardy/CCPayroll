@@ -114,6 +114,12 @@ def generate_timesheet_csv(period_id: str, employee_id: str = None) -> str:
         entries = TimesheetEntry.get_by_period_and_employee(period_id, employee.id)
         
         for entry in entries:
+            pay_amount = entry.pay
+            
+            # If this is a salaried employee and no pay is set, calculate it
+            if employee.pay_type == 'salary' and employee.salary and (not pay_amount or pay_amount.strip() == ''):
+                pay_amount = str(round(employee.salary / 52, 2))
+                
             data.append({
                 'Employee': employee.name,
                 'Position': employee.position,
@@ -121,7 +127,8 @@ def generate_timesheet_csv(period_id: str, employee_id: str = None) -> str:
                 'Regular Hours': entry.regular_hours,
                 'Overtime Hours': entry.overtime_hours,
                 'Job': entry.job_name,
-                'Notes': entry.notes
+                'Notes': entry.notes,
+                'Pay': pay_amount
             })
     
     # Create a DataFrame and sort by Employee and Date
@@ -134,6 +141,6 @@ def generate_timesheet_csv(period_id: str, employee_id: str = None) -> str:
         with open(filepath, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['Employee', 'Position', 'Date', 'Regular Hours', 
-                            'Overtime Hours', 'Job', 'Notes'])
+                            'Overtime Hours', 'Job', 'Notes', 'Pay'])
     
     return filepath 
