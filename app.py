@@ -17,6 +17,8 @@ import random
 
 from ccpayroll.database import get_db, init_db
 from ccpayroll.database.migration import save_timesheet_entry, save_pay_period, migrate_database
+from ccpayroll.models.employee import Employee
+from ccpayroll.models.pay_period import PayPeriod
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'f34029fc4928fc43982f98c98c')  # Secret key for sessions
@@ -433,32 +435,23 @@ def add_employee():
             flash('Employee name is required', 'danger')
             return redirect(url_for('add_employee'))
         
-        # Check if employee already exists
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            # Check if PostgreSQL connection
-            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-                cursor.execute('SELECT id FROM employees WHERE name = %s', (name,))
-            else:
-                cursor.execute('SELECT id FROM employees WHERE name = ?', (name,))
-                
-            if cursor.fetchone():
-                flash('Employee already exists', 'danger')
-                return redirect(url_for('add_employee'))
+        # Check if employee already exists using Employee model
+        existing = Employee.get_by_name(name)
+        if existing:
+            flash('Employee already exists', 'danger')
+            return redirect(url_for('add_employee'))
         
-        # Add new employee
-        employee_data = {
-            'id': str(uuid.uuid4()),
-            'name': name,
-            'pay_type': pay_type,
-            'rate': rate,
-            'salary': salary,
-            'commission_rate': commission_rate,
-            'install_crew': install_crew,
-            'position': position
-        }
-        save_employee(employee_data)
+        # Add new employee using Employee model
+        employee = Employee(
+            name=name,
+            pay_type=pay_type,
+            rate=float(rate) if rate else None,
+            salary=float(salary) if salary else None,
+            commission_rate=float(commission_rate) if commission_rate else None,
+            install_crew=install_crew,
+            position=position
+        )
+        employee.save()
         
         flash('Employee added successfully', 'success')
         return redirect(url_for('employees'))
@@ -564,15 +557,14 @@ def add_pay_period():
                 app.logger.error(f"Error generating pay period name: {str(e)}")
                 name = f"Pay Period {datetime.now().strftime('%m/%d/%y')}"
         
-        # Create pay period
-        period_data = {
-            'id': str(uuid.uuid4()),
-            'name': name,
-            'start_date': start_date,
-            'end_date': end_date
-        }
+        # Create and save pay period using the PayPeriod model
+        period = PayPeriod(
+            name=name,
+            start_date=start_date,
+            end_date=end_date
+        )
+        period.save()
         
-        save_pay_period(period_data)
         flash('Pay period added successfully', 'success')
         return redirect(url_for('pay_periods'))
     
