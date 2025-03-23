@@ -261,6 +261,19 @@
                             if (payInput && data.pay) {
                                 payInput.value = data.pay;
                             }
+                            
+                            // If the employee is an assistant installer, update the assistant pay display
+                            if (isAssistantInstaller(employee)) {
+                                updateAssistantPay(day);
+                                // Also update lead installer pay since it depends on assistant pay
+                                setTimeout(() => {
+                                    updateLeadInstallerPay(day);
+                                }, 500); // Small delay to ensure assistant pay is calculated first
+                            }
+                            // If the employee is a lead installer, recalculate pay with the formula
+                            else if (isLeadInstaller(employee)) {
+                                updateLeadInstallerPay(day);
+                            }
                         }
                         
                         // If project name or install days were updated by a lead installer, update assistant installers
@@ -291,7 +304,8 @@
                         
                         // If install amount was updated, calculate and display assistant pay
                         if (field === 'install') {
-                            updateAssistantPay(day);
+                            // Only need to update lead pay since assistant pay is now based on hours, not install amount
+                            updateLeadInstallerPay(day);
                         }
                         
                         // Update totals
@@ -309,12 +323,23 @@
         
         // Initial update of assistant pay displays
         updateAllAssistantPay();
+        
+        // Initial update of lead installer pay (after assistant pay is calculated)
+        setTimeout(() => {
+            updateAllLeadInstallerPay();
+        }, 1000); // Give time for assistant pay API calls to complete
     });
     
     // Check if an employee is a lead installer
     function isLeadInstaller(employeeName) {
         const empElement = document.querySelector(`[data-employee="${employeeName}"]`);
         return empElement && empElement.dataset.role === 'lead';
+    }
+    
+    // Check if an employee is an assistant installer
+    function isAssistantInstaller(employeeName) {
+        const empElement = document.querySelector(`[data-employee="${employeeName}"]`);
+        return empElement && empElement.dataset.role === 'assistant';
     }
     
     // Sync project name and days from lead installers to assistant installers
@@ -400,20 +425,41 @@
             if (crewElm.classList.contains('crew-section')) {
                 const crewNum = crewElm.dataset.crew;
                 
-                // Find the lead installer's install amount for this day
-                let leadInstallAmount = 0;
-                const leadInstallInput = crewElm.querySelector(`[data-role="lead"] .install-input[data-day="${day}"]`);
+                // Find all assistant installers in this crew
+                const assistantElements = crewElm.querySelectorAll('[data-role="assistant"]');
                 
-                if (leadInstallInput && leadInstallInput.value) {
-                    leadInstallAmount = parseFloat(leadInstallInput.value);
-                }
-                
-                // Calculate assistant pay (20% of lead install amount)
-                const assistantPay = leadInstallAmount * 0.2;
-                
-                // Update all assistant pay displays for this crew and day
-                crewElm.querySelectorAll(`.assistant-pay-display[data-crew="${crewNum}"][data-day="${day}"]`).forEach(display => {
-                    display.textContent = `$${assistantPay.toFixed(2)}`;
+                assistantElements.forEach(assistantElem => {
+                    const assistantName = assistantElem.dataset.employee;
+                    const assistantHoursInput = crewElm.querySelector(`[data-role="assistant"][data-employee="${assistantName}"] .hours-input[data-day="${day}"]`);
+                    
+                    if (assistantHoursInput && assistantHoursInput.value) {
+                        const assistantHours = parseFloat(assistantHoursInput.value);
+                        
+                        // Fetch this assistant's hourly rate
+                        fetch(`/get_employee_rate?name=${encodeURIComponent(assistantName)}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success && data.rate) {
+                                    const assistantRate = parseFloat(data.rate);
+                                    const assistantPay = assistantHours * assistantRate;
+                                    
+                                    // Update assistant pay display
+                                    const assistantPayDisplay = crewElm.querySelector(`.assistant-pay-display[data-crew="${crewNum}"][data-day="${day}"]`);
+                                    if (assistantPayDisplay) {
+                                        assistantPayDisplay.textContent = `$${assistantPay.toFixed(2)}`;
+                                    }
+                                }
+                            })
+                            .catch(error => {
+                                console.error(`Error getting rate for ${assistantName}:`, error);
+                            });
+                    } else {
+                        // No hours entered, set pay to zero
+                        const assistantPayDisplay = crewElm.querySelector(`.assistant-pay-display[data-crew="${crewNum}"][data-day="${day}"]`);
+                        if (assistantPayDisplay) {
+                            assistantPayDisplay.textContent = '$0.00';
+                        }
+                    }
                 });
             }
         });
@@ -424,6 +470,113 @@
         document.querySelectorAll('[data-date]').forEach(dayRow => {
             const day = dayRow.dataset.date;
             updateAssistantPay(day);
+        });
+    }
+    
+    // Update lead installer's pay for a specific day
+    function updateLeadInstallerPay(day) {
+        // Process each crew
+        document.querySelectorAll('[data-crew]').forEach(crewElm => {
+            if (crewElm.classList.contains('crew-section')) {
+                const crewNum = crewElm.dataset.crew;
+                
+                // Find the lead installer for this crew
+                const leadElement = crewElm.querySelector('[data-role="lead"]');
+                if (!leadElement) return;
+                
+                const leadName = leadElement.dataset.employee;
+                
+                // Find the lead installer's install amount and hours for this day
+                let leadInstallAmount = 0;
+                let leadHours = 0;
+                const leadInstallInput = crewElm.querySelector(`[data-role="lead"] .install-input[data-day="${day}"]`);
+                const leadHoursInput = crewElm.querySelector(`[data-role="lead"] .hours-input[data-day="${day}"]`);
+                
+                if (leadInstallInput && leadInstallInput.value) {
+                    leadInstallAmount = parseFloat(leadInstallInput.value);
+                } else {
+                    // Skip if no install amount
+                    return;
+                }
+                
+                if (leadHoursInput && leadHoursInput.value) {
+                    leadHours = parseFloat(leadHoursInput.value);
+                }
+                
+                // Get all assistant installers in this crew
+                const assistantElements = crewElm.querySelectorAll('[data-role="assistant"]');
+                
+                // Calculate total assistant pay for this crew and day
+                // We need to fetch all assistants' hourly rates and calculate based on their hours
+                const assistantPromises = [];
+                
+                assistantElements.forEach(assistantElem => {
+                    const assistantName = assistantElem.dataset.employee;
+                    const assistantHoursInput = crewElm.querySelector(`[data-role="assistant"][data-employee="${assistantName}"] .hours-input[data-day="${day}"]`);
+                    
+                    if (assistantHoursInput && assistantHoursInput.value) {
+                        const assistantHours = parseFloat(assistantHoursInput.value);
+                        
+                        // Fetch this assistant's hourly rate
+                        const promise = fetch(`/get_employee_rate?name=${encodeURIComponent(assistantName)}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success && data.rate) {
+                                    const assistantRate = parseFloat(data.rate);
+                                    return assistantHours * assistantRate;
+                                }
+                                return 0;
+                            })
+                            .catch(error => {
+                                console.error(`Error getting rate for ${assistantName}:`, error);
+                                return 0;
+                            });
+                        
+                        assistantPromises.push(promise);
+                    }
+                });
+                
+                // When all assistant pay calculations are done
+                Promise.all(assistantPromises)
+                    .then(assistantPayAmounts => {
+                        // Sum up all assistant pay amounts
+                        const totalAssistantPay = assistantPayAmounts.reduce((sum, pay) => sum + pay, 0);
+                        
+                        // Fetch lead installer's hourly rate
+                        fetch(`/get_employee_rate?name=${encodeURIComponent(leadName)}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success && data.rate) {
+                                    const hourlyRate = parseFloat(data.rate);
+                                    
+                                    // Calculate lead installer pay: (INSTALL value - total of assistant installers pay) + (lead installers hours x hourly rate)
+                                    const installPortion = leadInstallAmount - totalAssistantPay;
+                                    const hourlyPortion = leadHours * hourlyRate;
+                                    const totalPay = installPortion + hourlyPortion;
+                                    
+                                    // Update the lead installer's pay input
+                                    const leadPayInput = crewElm.querySelector(`[data-role="lead"] .pay-input[data-day="${day}"]`);
+                                    if (leadPayInput) {
+                                        leadPayInput.value = totalPay.toFixed(2);
+                                        
+                                        // Save to server
+                                        saveTimesheet(leadName, day, 'pay', totalPay.toFixed(2));
+                                    }
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error getting employee rate:', error);
+                            });
+                    });
+            }
+        });
+    }
+    
+    // Update all lead installer pay
+    function updateAllLeadInstallerPay() {
+        document.querySelectorAll('[data-date]').forEach(dayRow => {
+            const day = dayRow.dataset.date;
+            updateLeadInstallerPay(day);
         });
     }
     

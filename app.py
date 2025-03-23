@@ -759,8 +759,23 @@ def generate_report_route():
     report = generate_report(period_id)
     
     return render_template('report_result.html', 
-                          report=report, 
-                          report_id=report['report_id'])
+                           report=report, 
+                           report_id=report['report_id'])
+
+@app.route('/get_employee_rate')
+def get_employee_rate():
+    name = request.args.get('name')
+    if not name:
+        return jsonify({'success': False, 'error': 'Employee name is required'})
+    
+    employees = get_employees()
+    employee = next((e for e in employees if e['name'] == name), None)
+    
+    if not employee:
+        return jsonify({'success': False, 'error': 'Employee not found'})
+    
+    rate = employee.get('rate', 0)
+    return jsonify({'success': True, 'rate': rate})
 
 @app.route('/import', methods=['GET', 'POST'])
 def import_data():
