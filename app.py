@@ -10,14 +10,15 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
 import uuid
-import sqlite3
-from contextlib import contextmanager
-import threading
 import logging
 import random
+from dotenv import load_dotenv
 
-from ccpayroll.database import get_db, init_db, get_adapter_name, monitor_db_connections, close_db
+from ccpayroll.database import get_db, init_db
 from ccpayroll.database.migration import save_timesheet_entry, save_pay_period, migrate_database
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = 'creative_closets_payroll_app'
@@ -27,7 +28,6 @@ UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 DATA_FOLDER = 'data'
 REPORTS_FOLDER = 'static/reports'
-DATABASE_PATH = os.path.join(DATA_FOLDER, 'payroll.db')
 
 # Create necessary directories
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -38,12 +38,6 @@ os.makedirs(REPORTS_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['DATA_FOLDER'] = DATA_FOLDER
 app.config['REPORTS_FOLDER'] = REPORTS_FOLDER
-app.config['DATABASE_PATH'] = DATABASE_PATH
-
-# Check for required environment variables for PostgreSQL
-if 'DATABASE_URL' not in os.environ:
-    logging.warning("DATABASE_URL environment variable not set. "
-                  "PostgreSQL adapter will not work correctly.")
 
 # Configure logging
 logging.basicConfig(
@@ -56,199 +50,114 @@ logging.basicConfig(
 )
 logger = logging.getLogger('payroll')
 
-# Thread-local storage for database connections
-db_local = threading.local()
-db_connections = {}  # Track connections for monitoring
+# Clean up SQLite database file if it exists and migration is complete
+def cleanup_sqlite():
+    sqlite_file = os.path.join(DATA_FOLDER, 'payroll.db')
+    if os.path.exists(sqlite_file):
+        # Check if we have data in PostgreSQL before deleting SQLite file
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM pay_periods')
+            pay_periods_count = cursor.fetchone()['count']
+            
+            cursor.execute('SELECT COUNT(*) FROM employees')
+            employees_count = cursor.fetchone()['count']
+            
+            # If we have data in PostgreSQL, we can delete the SQLite file
+            if pay_periods_count > 0 or employees_count > 0:
+                try:
+                    os.remove(sqlite_file)
+                    logger.info(f"Removed SQLite database file: {sqlite_file}")
+                except Exception as e:
+                    logger.error(f"Error removing SQLite database file: {str(e)}")
 
-@app.before_request
-def before_request():
-    """Run before each request"""
-    # Periodically monitor database connections
-    if random.random() < 0.01:  # 1% chance to run on each request
-        monitor_db_connections()
-
-@app.teardown_appcontext
-def teardown_db(exception):
-    """Close database connection at the end of the request"""
-    close_db()
-
-# Helper functions
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def row_to_dict(row):
-    """Safely convert a database row to a dictionary regardless of adapter type"""
-    if isinstance(row, dict):
-        return row
-    try:
-        return dict(row)
-    except (ValueError, TypeError):
-        # If direct conversion fails, try to access as sequence or mapping
-        try:
-            # For psycopg2 RealDictRow objects
-            if hasattr(row, 'keys'):
-                return {k: row[k] for k in row.keys()}
-            elif hasattr(row, 'items'):
-                return dict(row.items())
-            else:
-                # Last resort: try to access fields by name explicitly
-                # Include common fields we know should exist
-                result = {}
-                for field in ['id', 'name', 'rate', 'install_crew', 'position', 
-                              'pay_type', 'salary', 'commission_rate']:
-                    try:
-                        result[field] = getattr(row, field, None)
-                    except (AttributeError, IndexError):
-                        try:
-                            result[field] = row[field] if field in row else None
-                        except (TypeError, KeyError):
-                            result[field] = None
-                return result
-        except (AttributeError, ValueError, TypeError):
-            # Absolute last resort: treat as a sequence of values
-            try:
-                return dict((str(i), v) for i, v in enumerate(row))
-            except:
-                # If all else fails, return an empty dict
-                return {}
-
 def get_pay_periods():
-    """Get all pay periods from the database"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM pay_periods ORDER BY start_date DESC')
-        rows = cursor.fetchall()
-        return [row_to_dict(row) for row in rows]
-
-def save_pay_period(period_data):
-    """Save a pay period to the database"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            '''
-            INSERT INTO pay_periods (id, name, start_date, end_date) 
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                start_date = EXCLUDED.start_date,
-                end_date = EXCLUDED.end_date
-            ''',
-            (period_data['id'], period_data['name'], period_data['start_date'], period_data['end_date'])
-        )
-        conn.commit()
-
-def get_employees():
-    """Get all employees from the database"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM employees')
-        rows = cursor.fetchall()
-        employees = []
-        for row in rows:
-            employee = row_to_dict(row)
-            # Skip employees with no ID or name
-            if (not employee.get('id') and not employee.get('name')):
-                app.logger.warning(f"Skipping invalid employee record: {employee}")
-                continue
-                
-            # Ensure each employee has an id field
-            if 'id' not in employee or not employee['id']:
-                if hasattr(row, 'id'):
-                    employee['id'] = row.id
-                elif isinstance(row, (list, tuple)) and len(row) > 0:
-                    employee['id'] = row[0]  # Assume first column is id
-                else:
-                    employee['id'] = str(uuid.uuid4())  # Last resort: generate a new id
-                    
-            # Ensure name is not None
-            if 'name' not in employee or not employee['name']:
-                employee['name'] = 'Unknown Employee'
-                
-            employees.append(employee)
-        return employees
+        return cursor.fetchall()
 
 def save_employee(employee_data):
     """Save an employee to the database"""
     with get_db() as conn:
         cursor = conn.cursor()
+        
+        # Generate ID if it doesn't exist
+        if 'id' not in employee_data or not employee_data['id']:
+            employee_data['id'] = str(uuid.uuid4())
+        
+        # Set default values if they don't exist
+        employee_data.setdefault('rate', None)
+        employee_data.setdefault('install_crew', 0)
+        employee_data.setdefault('position', None)
+        employee_data.setdefault('pay_type', 'hourly')
+        employee_data.setdefault('salary', None)
+        employee_data.setdefault('commission_rate', None)
+        
         cursor.execute(
-            '''
-            INSERT INTO employees (
-                id, name, rate, install_crew, position, 
-                pay_type, salary, commission_rate
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                rate = EXCLUDED.rate,
-                install_crew = EXCLUDED.install_crew,
-                position = EXCLUDED.position,
-                pay_type = EXCLUDED.pay_type,
-                salary = EXCLUDED.salary,
-                commission_rate = EXCLUDED.commission_rate
-            ''',
+            'INSERT INTO employees (id, name, rate, install_crew, position, pay_type, salary, commission_rate) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s) '
+            'ON CONFLICT (id) DO UPDATE SET '
+            'name = %s, rate = %s, install_crew = %s, position = %s, pay_type = %s, salary = %s, commission_rate = %s',
             (
-                employee_data['id'], 
-                employee_data['name'], 
-                employee_data.get('rate'), 
-                employee_data['install_crew'], 
-                employee_data['position'],
-                employee_data.get('pay_type', 'hourly'),
-                employee_data.get('salary'),
-                employee_data.get('commission_rate')
+                employee_data['id'], employee_data['name'], employee_data['rate'], 
+                employee_data['install_crew'], employee_data['position'], 
+                employee_data['pay_type'], employee_data['salary'], employee_data['commission_rate'],
+                employee_data['name'], employee_data['rate'], 
+                employee_data['install_crew'], employee_data['position'], 
+                employee_data['pay_type'], employee_data['salary'], employee_data['commission_rate']
             )
         )
         conn.commit()
 
+def get_employees():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM employees ORDER BY name')
+        return cursor.fetchall()
+
 def get_timesheet(period_id):
-    """Get timesheet data for a specific pay period"""
+    """Get timesheet data for a pay period"""
+    timesheet = {}
+    
+    # Get employees
+    employees = get_employees()
+    
+    # Get timesheet entries
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT employee_name, day, hours, pay, project_name, install_days, install FROM timesheet_entries WHERE period_id = %s',
+            'SELECT * FROM timesheet_entries WHERE period_id = %s',
             (period_id,)
         )
-        rows = cursor.fetchall()
-        
-        # Restructure data to match the original format
-        timesheet_data = {}
-        for row in rows:
-            employee_name = row['employee_name']
-            day = row['day']
-            
-            if employee_name not in timesheet_data:
-                timesheet_data[employee_name] = {}
-                
-            timesheet_data[employee_name][day] = {
-                'hours': row['hours'] or '',
-                'pay': row['pay'] or '',
-                'project_name': row['project_name'] or '',
-                'install_days': row['install_days'] or '',
-                'install': row['install'] or ''
-            }
-        
-        return timesheet_data
-
-def save_timesheet_entry(period_id, employee_name, day, field, value):
-    """Save a timesheet entry for a specific field"""
+        entries = cursor.fetchall()
+    
+    # Get pay period details
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Check if entry exists
-        cursor.execute(
-            'SELECT * FROM timesheet_entries WHERE period_id = %s AND employee_name = %s AND day = %s',
-            (period_id, employee_name, day)
-        )
-        existing = cursor.fetchone()
-        
-        if existing:
-            # Update specific field
-            cursor.execute(
-                f'UPDATE timesheet_entries SET {field} = %s WHERE period_id = %s AND employee_name = %s AND day = %s',
-                (value, period_id, employee_name, day)
-            )
-        else:
-            # Default values for all fields
-            fields = {
+        cursor.execute('SELECT * FROM pay_periods WHERE id = %s', (period_id,))
+        period = cursor.fetchone()
+    
+    if not period:
+        return timesheet
+    
+    # Calculate date range
+    start_date = datetime.strptime(period['start_date'], '%Y-%m-%d')
+    end_date = datetime.strptime(period['end_date'], '%Y-%m-%d')
+    days = []
+    current_date = start_date
+    while current_date <= end_date:
+        days.append(current_date.strftime('%Y-%m-%d'))
+        current_date += timedelta(days=1)
+    
+    # Initialize timesheet structure
+    for employee in employees:
+        timesheet[employee['name']] = {}
+        for day in days:
+            timesheet[employee['name']][day] = {
                 'hours': '',
                 'pay': '',
                 'project_name': '',
@@ -259,24 +168,34 @@ def save_timesheet_entry(period_id, employee_name, day, field, value):
                 'job_name': '',
                 'notes': ''
             }
-            # Set the specified field
-            fields[field] = value
-            
-            # Insert new entry
-            cursor.execute(
-                '''
-                INSERT INTO timesheet_entries 
-                (period_id, employee_name, day, hours, pay, project_name, install_days, install,
-                regular_hours, overtime_hours, job_name, notes)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''',
-                (period_id, employee_name, day, 
-                 fields['hours'], fields['pay'], 
-                 fields['project_name'], fields['install_days'], fields['install'],
-                 fields['regular_hours'], fields['overtime_hours'],
-                 fields['job_name'], fields['notes'])
-            )
+    
+    # Fill in timesheet entries
+    for entry in entries:
+        employee_name = entry['employee_name']
+        day = entry['day']
         
+        if employee_name in timesheet and day in timesheet[employee_name]:
+            # Fill in all fields from the entry
+            for field in ['hours', 'pay', 'project_name', 'install_days', 'install', 
+                         'regular_hours', 'overtime_hours', 'job_name', 'notes']:
+                if entry[field] is not None:
+                    timesheet[employee_name][day][field] = entry[field]
+    
+    return timesheet
+
+def save_pay_period(period_data):
+    """Save a pay period to the database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT INTO pay_periods (id, name, start_date, end_date) VALUES (%s, %s, %s, %s) '
+            'ON CONFLICT (id) DO UPDATE SET '
+            'name = %s, start_date = %s, end_date = %s',
+            (
+                period_data['id'], period_data['name'], period_data['start_date'], period_data['end_date'],
+                period_data['name'], period_data['start_date'], period_data['end_date']
+            )
+        )
         conn.commit()
 
 def generate_report(period_id=None):
@@ -389,13 +308,6 @@ def index():
 @app.route('/employees')
 def employees():
     employees_list = get_employees()
-    # Add debugging to check each employee has an id
-    for i, emp in enumerate(employees_list):
-        app.logger.info(f"Employee {i}: {emp}")
-        if 'id' not in emp:
-            app.logger.error(f"Employee {i} is missing id field: {emp}")
-            # Try to fix it by adding a dummy ID
-            emp['id'] = str(uuid.uuid4())
     return render_template('employees.html', employees=employees_list)
 
 @app.route('/employees/add', methods=['GET', 'POST'])
@@ -452,7 +364,7 @@ def edit_employee(employee_id):
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM employees WHERE id = %s', (employee_id,))
         row = cursor.fetchone()
-        employee = row_to_dict(row) if row else None
+        employee = dict(row) if row else None
     
     if not employee:
         flash('Employee not found', 'danger')
@@ -497,27 +409,13 @@ def edit_employee(employee_id):
 
 @app.route('/employees/delete/<employee_id>', methods=['POST'])
 def delete_employee(employee_id):
-    """Delete an employee with the specified ID"""
-    app.logger.info(f"Attempting to delete employee with ID: {employee_id}")
+    # Get employees and remove the one with matching ID
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM employees WHERE id = %s', (employee_id,))
+        conn.commit()
     
-    try:
-        # Get employees and remove the one with matching ID
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM employees WHERE id = %s', (employee_id,))
-            affected_rows = cursor.rowcount
-            conn.commit()
-            
-        if affected_rows > 0:
-            app.logger.info(f"Successfully deleted employee with ID: {employee_id}")
-            flash('Employee deleted successfully', 'success')
-        else:
-            app.logger.warning(f"No employee found with ID: {employee_id}")
-            flash('No employee found with that ID', 'warning')
-    except Exception as e:
-        app.logger.error(f"Error deleting employee: {str(e)}")
-        flash(f'Error deleting employee: {str(e)}', 'danger')
-    
+    flash('Employee deleted successfully', 'success')
     return redirect(url_for('employees'))
 
 @app.route('/pay-periods')
@@ -1149,127 +1047,149 @@ def fix_timesheet(period_id):
     
     return redirect(url_for('timesheet', period_id=period_id))
 
-# Initialize the database
-from ccpayroll.database import init_app
+# Initialize with sample data if empty
+if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
+    sample_employees = [
+        # Hourly employees - installers
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'VICTOR LAZO',
+            'pay_type': 'hourly',
+            'rate': '20',
+            'salary': None,
+            'commission_rate': None,
+            'install_crew': 1,
+            'position': 'lead'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'SAMUEL CASTILLO',
+            'pay_type': 'hourly',
+            'rate': '18',
+            'salary': None,
+            'commission_rate': None,
+            'install_crew': 1,
+            'position': 'assistant'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'JOSE MEDINA',
+            'pay_type': 'hourly',
+            'rate': '22',
+            'salary': None,
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'none'
+        },
+        # Salary employees
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'ROBERT SMITH',
+            'pay_type': 'salary',
+            'rate': None,
+            'salary': '85000',
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'project_manager'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'LISA JOHNSON',
+            'pay_type': 'salary',
+            'rate': None,
+            'salary': '150000',
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'ceo'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'MICHAEL CHEN',
+            'pay_type': 'salary',
+            'rate': None,
+            'salary': '95000',
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'engineer'
+        },
+        # Commission employees
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'SARAH DAVIS',
+            'pay_type': 'commission',
+            'rate': None,
+            'salary': None,
+            'commission_rate': '12',
+            'install_crew': 0,
+            'position': 'salesman'
+        }
+    ]
+    # Save each employee individually
+    for employee in sample_employees:
+        save_employee(employee)
 
-# Use 'sqlite' or 'postgresql' as adapter
-init_app(app, adapter='postgresql')
-
-@app.route('/info')
-def app_info():
-    return jsonify({
-        'version': '1.0.0',
-        'database_adapter': get_adapter_name(),
-        'environment': os.environ.get('FLASK_ENV', 'production')
-    })
-
-# Initialize sample data function - only called within app context
-def initialize_sample_data():
-    """Initialize with sample data if empty"""
-    if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
-        sample_employees = [
-            # Hourly employees - installers
-            {
-                'id': str(uuid.uuid4()),
-                'name': 'VICTOR LAZO',
-                'pay_type': 'hourly',
-                'rate': '20',
-                'salary': None,
-                'commission_rate': None,
-                'install_crew': 1,
-                'position': 'lead'
-            },
-            {
-                'id': str(uuid.uuid4()),
-                'name': 'SAMUEL CASTILLO',
-                'pay_type': 'hourly',
-                'rate': '18',
-                'salary': None,
-                'commission_rate': None,
-                'install_crew': 1,
-                'position': 'assistant'
-            },
-            {
-                'id': str(uuid.uuid4()),
-                'name': 'JOSE MEDINA',
-                'pay_type': 'hourly',
-                'rate': '22',
-                'salary': None,
-                'commission_rate': None,
-                'install_crew': 0,
-                'position': 'none'
-            },
-            # Salary employees
-            {
-                'id': str(uuid.uuid4()),
-                'name': 'ROBERT SMITH',
-                'pay_type': 'salary',
-                'rate': None,
-                'salary': '85000',
-                'commission_rate': None,
-                'install_crew': 0,
-                'position': 'project_manager'
-            },
-            {
-                'id': str(uuid.uuid4()),
-                'name': 'LISA JOHNSON',
-                'pay_type': 'salary',
-                'rate': None,
-                'salary': '150000',
-                'commission_rate': None,
-                'install_crew': 0,
-                'position': 'ceo'
-            },
-            {
-                'id': str(uuid.uuid4()),
-                'name': 'MICHAEL CHEN',
-                'pay_type': 'salary',
-                'rate': None,
-                'salary': '95000',
-                'commission_rate': None,
-                'install_crew': 0,
-                'position': 'engineer'
-            },
-            # Commission employees
-            {
-                'id': str(uuid.uuid4()),
-                'name': 'SARAH DAVIS',
-                'pay_type': 'commission',
-                'rate': None,
-                'salary': None,
-                'commission_rate': '12',
-                'install_crew': 0,
-                'position': 'salesman'
-            }
-        ]
-        # Save each employee individually
-        for employee in sample_employees:
-            save_employee(employee)
+# Initialize database and migrate data from JSON if needed
+def migrate_json_to_db():
+    """Migrate data from JSON files to the SQLite database"""
+    # Check if we need to migrate (if tables are empty)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM pay_periods')
+        pay_periods_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM employees')
+        employees_count = cursor.fetchone()[0]
+        
+        # If we already have data, skip migration
+        if pay_periods_count > 0 or employees_count > 0:
+            return
+        
+        # Migrate pay periods
+        if os.path.exists(os.path.join(DATA_FOLDER, 'pay_periods.json')):
+            try:
+                with open(os.path.join(DATA_FOLDER, 'pay_periods.json'), 'r') as f:
+                    pay_periods = json.load(f)
+                    for period in pay_periods:
+                        save_pay_period(period)
+                app.logger.info("Migrated pay periods from JSON to database")
+            except Exception as e:
+                app.logger.error(f"Error migrating pay periods: {str(e)}")
+        
+        # Migrate employees
+        if os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
+            try:
+                with open(os.path.join(DATA_FOLDER, 'employees.json'), 'r') as f:
+                    employees = json.load(f)
+                    for employee in employees:
+                        save_employee(employee)
+                app.logger.info("Migrated employees from JSON to database")
+            except Exception as e:
+                app.logger.error(f"Error migrating employees: {str(e)}")
+        
+        # Migrate timesheets
+        for filename in os.listdir(DATA_FOLDER):
+            if filename.startswith('timesheet_') and filename.endswith('.json'):
+                try:
+                    period_id = filename.replace('timesheet_', '').replace('.json', '')
+                    
+                    with open(os.path.join(DATA_FOLDER, filename), 'r') as f:
+                        timesheet_data = json.load(f)
+                        
+                        for employee_name, days in timesheet_data.items():
+                            for day, data in days.items():
+                                for field, value in data.items():
+                                    if value:  # Only save non-empty values
+                                        save_timesheet_entry(period_id, employee_name, day, field, value)
+                    
+                    app.logger.info(f"Migrated timesheet {filename} to database")
+                except Exception as e:
+                    app.logger.error(f"Error migrating timesheet {filename}: {str(e)}")
 
 if __name__ == '__main__':
-    # Ensure database exists
+    # Initialize database within application context
+    app.app_context().push()
     init_db()
+    migrate_database()
+    cleanup_sqlite()
     
-    # Run any necessary migrations within the Flask app context
-    with app.app_context():
-        migrate_database()
-        # Initialize sample data if needed
-        initialize_sample_data()
-        
-        # Ensure at least one employee exists for testing
-        employees = get_employees()
-        if not employees:
-            app.logger.info("No employees found. Creating a test employee.")
-            test_employee = {
-                'id': str(uuid.uuid4()),
-                'name': 'Test Employee',
-                'pay_type': 'hourly',
-                'rate': '20',
-                'salary': None,
-                'commission_rate': None,
-                'install_crew': 1,
-                'position': 'lead'
-            }
-            save_employee(test_employee)
-    
-    app.run(debug=True, port=5001) 
+    app.run(debug=True) 

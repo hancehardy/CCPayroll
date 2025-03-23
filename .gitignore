@@ -50,6 +50,10 @@ static/reports/
 *.xlsx
 *.xls
 
-# Heroku specific
-.env
-*.db 
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env 

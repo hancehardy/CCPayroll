@@ -61,13 +61,7 @@ class Employee:
         """Get an employee by ID"""
         with get_db() as conn:
             cursor = conn.cursor()
-            
-            # Check if PostgreSQL connection
-            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-                cursor.execute('SELECT * FROM employees WHERE id = %s', (employee_id,))
-            else:
-                cursor.execute('SELECT * FROM employees WHERE id = ?', (employee_id,))
-                
+            cursor.execute('SELECT * FROM employees WHERE id = ?', (employee_id,))
             row = cursor.fetchone()
         
         return cls.from_dict(dict(row)) if row else None
@@ -77,13 +71,7 @@ class Employee:
         """Get an employee by name"""
         with get_db() as conn:
             cursor = conn.cursor()
-            
-            # Check if PostgreSQL connection
-            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-                cursor.execute('SELECT * FROM employees WHERE name = %s', (name,))
-            else:
-                cursor.execute('SELECT * FROM employees WHERE name = ?', (name,))
-                
+            cursor.execute('SELECT * FROM employees WHERE name = ?', (name,))
             row = cursor.fetchone()
         
         return cls.from_dict(dict(row)) if row else None
@@ -92,57 +80,24 @@ class Employee:
         """Save this employee to the database"""
         with get_db() as conn:
             cursor = conn.cursor()
-            
-            # Check if PostgreSQL connection
-            if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
-                # PostgreSQL syntax
-                cursor.execute(
-                    '''
-                    INSERT INTO employees (
-                        id, name, rate, install_crew, position, 
-                        pay_type, salary, commission_rate
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        rate = EXCLUDED.rate,
-                        install_crew = EXCLUDED.install_crew,
-                        position = EXCLUDED.position,
-                        pay_type = EXCLUDED.pay_type,
-                        salary = EXCLUDED.salary,
-                        commission_rate = EXCLUDED.commission_rate
-                    ''',
-                    (
-                        self.id, 
-                        self.name, 
-                        self.rate, 
-                        self.install_crew, 
-                        self.position,
-                        self.pay_type,
-                        self.salary,
-                        self.commission_rate
-                    )
+            cursor.execute(
+                '''
+                INSERT OR REPLACE INTO employees (
+                    id, name, rate, install_crew, position, 
+                    pay_type, salary, commission_rate
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    self.id, 
+                    self.name, 
+                    self.rate, 
+                    self.install_crew, 
+                    self.position,
+                    self.pay_type,
+                    self.salary,
+                    self.commission_rate
                 )
-            else:
-                # SQLite syntax
-                cursor.execute(
-                    '''
-                    INSERT OR REPLACE INTO employees (
-                        id, name, rate, install_crew, position, 
-                        pay_type, salary, commission_rate
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''',
-                    (
-                        self.id, 
-                        self.name, 
-                        self.rate, 
-                        self.install_crew, 
-                        self.position,
-                        self.pay_type,
-                        self.salary,
-                        self.commission_rate
-                    )
-                )
-            
+            )
             conn.commit()
     
     def delete(self) -> None:
@@ -179,4 +134,4 @@ class Employee:
             'regular': regular_pay,
             'overtime': overtime_pay,
             'total': total_pay
-        }
+        } 

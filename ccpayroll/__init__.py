@@ -9,6 +9,10 @@ import os
 import logging
 from datetime import datetime
 from flask import Flask, url_for
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 def create_app(test_config=None):
     """Create and configure the Flask application"""
@@ -17,7 +21,11 @@ def create_app(test_config=None):
     # Default configuration
     app.config.from_mapping(
         SECRET_KEY='dev',
-        DATABASE=os.path.join(app.instance_path, 'payroll.sqlite'),
+        PG_HOST=os.environ.get('PG_HOST', 'localhost'),
+        PG_PORT=os.environ.get('PG_PORT', '5432'),
+        PG_USER=os.environ.get('PG_USER', 'postgres'),
+        PG_PASSWORD=os.environ.get('PG_PASSWORD', 'postgres'),
+        PG_DB=os.environ.get('PG_DB', 'ccpayroll'),
         UPLOAD_FOLDER=os.path.join(app.instance_path, 'uploads'),
         REPORT_FOLDER=os.path.join(app.instance_path, 'reports'),
         DATA_FOLDER=os.path.join(app.instance_path, 'data'),

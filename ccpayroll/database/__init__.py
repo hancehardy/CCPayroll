@@ -2,97 +2,160 @@
 Database management module for Creative Closets Payroll
 """
 
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import threading
+import os
 from contextlib import contextmanager
 from datetime import datetime
-import os
+from dotenv import load_dotenv
 from flask import current_app, g
-import logging
 
-# Actual implementations imported based on adapter choice
-from .sqlite_adapter import get_db as get_sqlite_db
-from .sqlite_adapter import close_db as close_sqlite_db
-from .sqlite_adapter import monitor_db_connections as monitor_sqlite_connections
-from .sqlite_adapter import init_db as init_sqlite_db
-from .sqlite_adapter import init_app as init_sqlite_app
+# Load environment variables from .env file
+load_dotenv()
 
-try:
-    from .pg_adapter import get_db as get_pg_db
-    from .pg_adapter import close_db as close_pg_db
-    from .pg_adapter import monitor_db_connections as monitor_pg_connections
-    from .pg_adapter import init_db as init_pg_db
-    from .pg_adapter import init_app as init_pg_app
-    _has_pg_adapter = True
-except ImportError:
-    _has_pg_adapter = False
-    
-# Global to store which adapter is being used
-_adapter = 'sqlite'
+# Thread-local storage for database connections
+db_local = threading.local()
+db_connections = {}  # Track connections for monitoring
 
-# Proxied functions that delegate to the chosen adapter
+@contextmanager
 def get_db():
     """Context manager for getting database connection"""
-    if _adapter == 'postgresql':
-        if not _has_pg_adapter:
-            raise ImportError("PostgreSQL adapter not available. Make sure psycopg2 is installed.")
-        return get_pg_db()
+    thread_id = threading.get_ident()
+    
+    if not hasattr(db_local, 'connection'):
+        # PostgreSQL connection parameters
+        host = os.environ.get('PG_HOST', 'localhost')
+        port = os.environ.get('PG_PORT', '5432')
+        user = os.environ.get('PG_USER', 'postgres')
+        password = os.environ.get('PG_PASSWORD', 'postgres')
+        db_name = os.environ.get('PG_DB', 'ccpayroll')
+        
+        # Connect to PostgreSQL
+        db_local.connection = psycopg2.connect(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            dbname=db_name,
+            cursor_factory=RealDictCursor
+        )
+        db_connections[thread_id] = {
+            'created_at': datetime.now(),
+            'last_used': datetime.now()
+        }
+        current_app.logger.info(f"New DB connection created for thread {thread_id}")
     else:
-        return get_sqlite_db()
+        # Update last used time
+        if thread_id in db_connections:
+            db_connections[thread_id]['last_used'] = datetime.now()
+    
+    try:
+        yield db_local.connection
+    except Exception as e:
+        db_local.connection.rollback()
+        current_app.logger.error(f"Database error in thread {thread_id}: {str(e)}")
+        raise
+    finally:
+        # Keep connection open for this thread's lifetime
+        pass
 
 def close_db():
     """Close database connection if it exists"""
-    if _adapter == 'postgresql':
-        if _has_pg_adapter:
-            return close_pg_db()
-    else:
-        return close_sqlite_db()
+    thread_id = threading.get_ident()
+    
+    if hasattr(db_local, 'connection'):
+        db_local.connection.close()
+        if thread_id in db_connections:
+            del db_connections[thread_id]
+        del db_local.connection
+        current_app.logger.info(f"Closed DB connection for thread {thread_id}")
 
 def monitor_db_connections():
     """Log information about current database connections"""
-    if _adapter == 'postgresql':
-        if _has_pg_adapter:
-            return monitor_pg_connections()
-    else:
-        return monitor_sqlite_connections()
+    now = datetime.now()
+    for thread_id, info in list(db_connections.items()):
+        age = (now - info['created_at']).total_seconds()
+        idle_time = (now - info['last_used']).total_seconds()
+        
+        if idle_time > 300:  # 5 minutes idle
+            current_app.logger.warning(f"Thread {thread_id} has idle DB connection for {idle_time:.1f} seconds")
+        
+        if age > 3600:  # 1 hour old
+            current_app.logger.info(f"Thread {thread_id} has DB connection open for {age:.1f} seconds")
 
 def init_db():
     """Initialize the database schema"""
-    if _adapter == 'postgresql':
-        if _has_pg_adapter:
-            return init_pg_db()
-    else:
-        return init_sqlite_db()
-
-def init_app(app, adapter='sqlite'):
-    """Initialize database connection and schema for the Flask app
-    
-    Args:
-        app: Flask application instance
-        adapter: Database adapter to use ('sqlite' or 'postgresql')
-    """
-    global _adapter
-    
-    # Determine which adapter to use
-    if adapter == 'postgresql':
-        if not _has_pg_adapter:
-            app.logger.warning("PostgreSQL adapter requested but not available. Using SQLite instead.")
-            _adapter = 'sqlite'
-            return init_sqlite_app(app)
-        else:
-            app.logger.info("Using PostgreSQL database adapter")
-            _adapter = 'postgresql'
-            
-            # Check if DATABASE_URL is set
-            if not os.getenv('DATABASE_URL'):
-                app.logger.error("DATABASE_URL environment variable not set. PostgreSQL adapter will not work.")
-                
-            return init_pg_app(app)
-    else:
-        app.logger.info("Using SQLite database adapter")
-        _adapter = 'sqlite'
-        return init_sqlite_app(app)
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-def get_adapter_name():
-    """Return the name of the current adapter"""
-    return _adapter 
+        # Create pay_periods table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pay_periods (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL
+        )
+        ''')
+        
+        # Create employees table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS employees (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            rate REAL,
+            install_crew INTEGER DEFAULT 0,
+            position TEXT,
+            pay_type TEXT DEFAULT 'hourly',
+            salary REAL,
+            commission_rate REAL
+        )
+        ''')
+        
+        # Create timesheet table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS timesheet_entries (
+            id SERIAL PRIMARY KEY,
+            period_id TEXT NOT NULL,
+            employee_name TEXT NOT NULL,
+            day TEXT NOT NULL,
+            hours TEXT,
+            pay TEXT,
+            project_name TEXT,
+            install_days TEXT,
+            install TEXT,
+            regular_hours REAL DEFAULT 0,
+            overtime_hours REAL DEFAULT 0,
+            job_name TEXT,
+            notes TEXT,
+            FOREIGN KEY (period_id) REFERENCES pay_periods(id),
+            UNIQUE (period_id, employee_name, day)
+        )
+        ''')
+        
+        conn.commit()
+
+def init_app(app):
+    """Initialize database connection and schema for the Flask app"""
+    # Add before_request function to periodically monitor connections
+    @app.before_request
+    def before_request():
+        """Run before each request"""
+        # Random chance to monitor connections (1%)
+        import random
+        if random.random() < 0.01:
+            monitor_db_connections()
+    
+    # Add teardown function to close connections
+    @app.teardown_appcontext
+    def teardown_db(exception):
+        """Close database connection at the end of the request"""
+        close_db()
+    
+    # Initialize database
+    with app.app_context():
+        init_db()
+        # Migrate any existing JSON data to database
+        from .migration import migrate_json_to_db
+        migrate_json_to_db() 

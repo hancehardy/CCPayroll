@@ -14,7 +14,7 @@ A payroll management application for Creative Closets, designed to handle employ
 
 - Python 3.8+
 - Flask
-- SQLite
+- PostgreSQL
 - wkhtmltopdf (for PDF generation)
 - Other dependencies listed in requirements.txt
 
@@ -103,28 +103,44 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **Visualization**: Matplotlib
 - **Data Storage**: JSON files
 
-## License
+## Database
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+The application now uses PostgreSQL for data storage, which provides the following benefits:
 
-## Database System
+1. Better performance and scalability for larger payroll datasets
+2. Advanced data integrity and relational capabilities
+3. Enterprise-grade database technology
+4. Concurrent access support
+5. Better backup and recovery options
 
-The application now uses SQLite for data storage, which provides the following benefits:
+To set up the database:
 
-1. **Data Integrity**: Prevents data corruption issues that were occurring with JSON files
-2. **Transactional Support**: Each update is atomic, preventing partial writes
-3. **Concurrency**: Properly handles multiple simultaneous updates
-4. **Better Performance**: More efficient for larger datasets
+1. Install PostgreSQL if not already installed
+2. Create a PostgreSQL database:
+   ```
+   createdb ccpayroll
+   ```
+3. Update the `.env` file with your PostgreSQL credentials:
+   ```
+   PG_HOST=localhost
+   PG_PORT=5432
+   PG_USER=your_username
+   PG_PASSWORD=your_password
+   PG_DB=ccpayroll
+   ```
+4. The application will initialize the database tables automatically on first run
+
+Previously, the application used SQLite. If you're upgrading from a previous version, see the "Database Migration from SQLite to PostgreSQL" section below.
 
 ### Migration Process
 
 When you first run the application after this update, it will automatically:
 
-1. Initialize the SQLite database (stored in `data/payroll.db`)
-2. Migrate all existing data from JSON files to the database
+1. Initialize the PostgreSQL database tables
+2. Migrate any existing data from JSON files directly to PostgreSQL
 3. Keep the original JSON files as backup
 
-No manual migration steps are required. Your existing data will be preserved.
+No manual migration steps are required if you are coming from the JSON-based version. Your existing data will be preserved.
 
 ### Troubleshooting
 
@@ -133,53 +149,35 @@ If you experience any issues after migration:
 1. Check the `data/payroll.log` file for error messages
 2. Use the `/fix-timesheet/<period_id>` route to reset a specific timesheet if needed
 
-## Heroku Deployment
+## Database Migration from SQLite to PostgreSQL
 
-To deploy this application to Heroku, follow these steps:
+This application has been updated to use PostgreSQL instead of SQLite. To migrate your existing data:
 
-1. Make sure you have the [Heroku CLI](https://devcenter.heroku.com/articles/heroku-cli) installed
-2. Login to Heroku:
+1. Install PostgreSQL if not already installed
+2. Create a PostgreSQL database:
    ```
-   heroku login
+   createdb ccpayroll
    ```
-
-3. Create a new Heroku app:
+3. Update the `.env` file with your PostgreSQL credentials:
    ```
-   heroku create your-app-name
+   PG_HOST=localhost
+   PG_PORT=5432
+   PG_USER=your_username
+   PG_PASSWORD=your_password
+   PG_DB=ccpayroll
    ```
-
-4. Add the PostgreSQL add-on:
+4. Run the migration script to transfer data from SQLite to PostgreSQL:
    ```
-   heroku addons:create heroku-postgresql:mini
+   python migrate_db.py
    ```
-
-5. Set environment variables:
+5. Run the application normally:
    ```
-   heroku config:set SECRET_KEY=your_secure_secret_key
-   ```
-
-6. Deploy the application:
-   ```
-   git add .
-   git commit -m "Prepare for Heroku deployment"
-   git push heroku main
+   python app.py
    ```
 
-7. Initialize the database:
-   ```
-   heroku run python -c "from ccpayroll.database import init_db; init_db()"
-   ```
+The migration script will:
+1. Extract all data from your existing SQLite database
+2. Create the necessary tables in PostgreSQL
+3. Insert the data into PostgreSQL
 
-8. Open the application:
-   ```
-   heroku open
-   ```
-
-### Important Notes
-
-- The app uses PostgreSQL on Heroku instead of SQLite
-- Local file uploads are not persistent on Heroku due to its ephemeral filesystem. For production use, consider using a service like AWS S3 for file storage.
-- You might need to scale your dyno:
-  ```
-  heroku ps:scale web=1
-  ``` 
+After successful migration, the SQLite database file will be automatically removed. 
