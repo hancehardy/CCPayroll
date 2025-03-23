@@ -1070,89 +1070,9 @@ def fix_timesheet(period_id):
     
     return redirect(url_for('timesheet', period_id=period_id))
 
-# Initialize with sample data if empty
-if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
-    sample_employees = [
-        # Hourly employees - installers
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'VICTOR LAZO',
-            'pay_type': 'hourly',
-            'rate': '20',
-            'salary': None,
-            'commission_rate': None,
-            'install_crew': 1,
-            'position': 'lead'
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'SAMUEL CASTILLO',
-            'pay_type': 'hourly',
-            'rate': '18',
-            'salary': None,
-            'commission_rate': None,
-            'install_crew': 1,
-            'position': 'assistant'
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'JOSE MEDINA',
-            'pay_type': 'hourly',
-            'rate': '22',
-            'salary': None,
-            'commission_rate': None,
-            'install_crew': 0,
-            'position': 'none'
-        },
-        # Salary employees
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'ROBERT SMITH',
-            'pay_type': 'salary',
-            'rate': None,
-            'salary': '85000',
-            'commission_rate': None,
-            'install_crew': 0,
-            'position': 'project_manager'
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'LISA JOHNSON',
-            'pay_type': 'salary',
-            'rate': None,
-            'salary': '150000',
-            'commission_rate': None,
-            'install_crew': 0,
-            'position': 'ceo'
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'MICHAEL CHEN',
-            'pay_type': 'salary',
-            'rate': None,
-            'salary': '95000',
-            'commission_rate': None,
-            'install_crew': 0,
-            'position': 'engineer'
-        },
-        # Commission employees
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'SARAH DAVIS',
-            'pay_type': 'commission',
-            'rate': None,
-            'salary': None,
-            'commission_rate': '12',
-            'install_crew': 0,
-            'position': 'salesman'
-        }
-    ]
-    # Save each employee individually
-    for employee in sample_employees:
-        save_employee(employee)
-
 # Initialize the database
 from ccpayroll.database import init_app
+
 # Use 'sqlite' or 'postgresql' as adapter
 init_app(app, adapter='postgresql')
 
@@ -1164,6 +1084,89 @@ def app_info():
         'environment': os.environ.get('FLASK_ENV', 'production')
     })
 
+# Initialize sample data function - only called within app context
+def initialize_sample_data():
+    """Initialize with sample data if empty"""
+    if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
+        sample_employees = [
+            # Hourly employees - installers
+            {
+                'id': str(uuid.uuid4()),
+                'name': 'VICTOR LAZO',
+                'pay_type': 'hourly',
+                'rate': '20',
+                'salary': None,
+                'commission_rate': None,
+                'install_crew': 1,
+                'position': 'lead'
+            },
+            {
+                'id': str(uuid.uuid4()),
+                'name': 'SAMUEL CASTILLO',
+                'pay_type': 'hourly',
+                'rate': '18',
+                'salary': None,
+                'commission_rate': None,
+                'install_crew': 1,
+                'position': 'assistant'
+            },
+            {
+                'id': str(uuid.uuid4()),
+                'name': 'JOSE MEDINA',
+                'pay_type': 'hourly',
+                'rate': '22',
+                'salary': None,
+                'commission_rate': None,
+                'install_crew': 0,
+                'position': 'none'
+            },
+            # Salary employees
+            {
+                'id': str(uuid.uuid4()),
+                'name': 'ROBERT SMITH',
+                'pay_type': 'salary',
+                'rate': None,
+                'salary': '85000',
+                'commission_rate': None,
+                'install_crew': 0,
+                'position': 'project_manager'
+            },
+            {
+                'id': str(uuid.uuid4()),
+                'name': 'LISA JOHNSON',
+                'pay_type': 'salary',
+                'rate': None,
+                'salary': '150000',
+                'commission_rate': None,
+                'install_crew': 0,
+                'position': 'ceo'
+            },
+            {
+                'id': str(uuid.uuid4()),
+                'name': 'MICHAEL CHEN',
+                'pay_type': 'salary',
+                'rate': None,
+                'salary': '95000',
+                'commission_rate': None,
+                'install_crew': 0,
+                'position': 'engineer'
+            },
+            # Commission employees
+            {
+                'id': str(uuid.uuid4()),
+                'name': 'SARAH DAVIS',
+                'pay_type': 'commission',
+                'rate': None,
+                'salary': None,
+                'commission_rate': '12',
+                'install_crew': 0,
+                'position': 'salesman'
+            }
+        ]
+        # Save each employee individually
+        for employee in sample_employees:
+            save_employee(employee)
+
 if __name__ == '__main__':
     # Ensure database exists
     init_db()
@@ -1171,5 +1174,7 @@ if __name__ == '__main__':
     # Run any necessary migrations within the Flask app context
     with app.app_context():
         migrate_database()
+        # Initialize sample data if needed
+        initialize_sample_data()
     
     app.run(debug=True, port=5001) 
