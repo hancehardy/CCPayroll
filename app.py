@@ -19,12 +19,23 @@ from ccpayroll.database import get_db, init_db
 from ccpayroll.database.migration import save_timesheet_entry, save_pay_period, migrate_database
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'creative_closets_payroll_app')
+app.secret_key = os.environ.get('SECRET_KEY', 'f34029fc4928fc43982f98c98c')  # Secret key for sessions
+
+# Initialize database within app context
+with app.app_context():
+    from ccpayroll.database import init_db
+    init_db()
+
+# Configure the app
+basedir = os.path.abspath(os.path.dirname(__file__))
+DATA_FOLDER = os.path.join(basedir, 'data')
+TEMPLATES_FOLDER = os.path.join(basedir, 'templates')
+STATIC_FOLDER = os.path.join(basedir, 'static')
+os.makedirs(DATA_FOLDER, exist_ok=True)
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-DATA_FOLDER = 'data'
 REPORTS_FOLDER = 'static/reports'
 
 # Create necessary directories
@@ -1128,87 +1139,6 @@ def fix_timesheet(period_id):
         flash('Failed to fix timesheet', 'danger')
     
     return redirect(url_for('timesheet', period_id=period_id))
-
-# Initialize with sample data if empty
-if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
-    sample_employees = [
-        # Hourly employees - installers
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'VICTOR LAZO',
-            'pay_type': 'hourly',
-            'rate': '20',
-            'salary': None,
-            'commission_rate': None,
-            'install_crew': 1,
-            'position': 'lead'
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'SAMUEL CASTILLO',
-            'pay_type': 'hourly',
-            'rate': '18',
-            'salary': None,
-            'commission_rate': None,
-            'install_crew': 1,
-            'position': 'assistant'
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'JOSE MEDINA',
-            'pay_type': 'hourly',
-            'rate': '22',
-            'salary': None,
-            'commission_rate': None,
-            'install_crew': 0,
-            'position': 'none'
-        },
-        # Salary employees
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'ROBERT SMITH',
-            'pay_type': 'salary',
-            'rate': None,
-            'salary': '85000',
-            'commission_rate': None,
-            'install_crew': 0,
-            'position': 'project_manager'
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'LISA JOHNSON',
-            'pay_type': 'salary',
-            'rate': None,
-            'salary': '150000',
-            'commission_rate': None,
-            'install_crew': 0,
-            'position': 'ceo'
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'MICHAEL CHEN',
-            'pay_type': 'salary',
-            'rate': None,
-            'salary': '95000',
-            'commission_rate': None,
-            'install_crew': 0,
-            'position': 'engineer'
-        },
-        # Commission employees
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'SARAH DAVIS',
-            'pay_type': 'commission',
-            'rate': None,
-            'salary': None,
-            'commission_rate': '12',
-            'install_crew': 0,
-            'position': 'salesman'
-        }
-    ]
-    # Save each employee individually
-    for employee in sample_employees:
-        save_employee(employee)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 
