@@ -53,6 +53,7 @@ class PayPeriod:
             
             # Check if PostgreSQL connection
             if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+                cursor.execute('SELECT * FROM pay_periods WHERE id = %s', (period_id,))
             else:
                 cursor.execute('SELECT * FROM pay_periods WHERE id = ?', (period_id,))
                 
@@ -71,6 +72,7 @@ class PayPeriod:
                 cursor.execute(
                     '''
                     INSERT INTO pay_periods (id, name, start_date, end_date) 
+                    VALUES (%s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         name = EXCLUDED.name,
                         start_date = EXCLUDED.start_date,
@@ -95,7 +97,9 @@ class PayPeriod:
             # Check if PostgreSQL connection
             if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
                 # Delete associated timesheet entries
+                cursor.execute('DELETE FROM timesheet_entries WHERE period_id = %s', (self.id,))
                 # Delete the pay period
+                cursor.execute('DELETE FROM pay_periods WHERE id = %s', (self.id,))
             else:
                 # Delete associated timesheet entries
                 cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (self.id,))
@@ -107,10 +111,14 @@ class PayPeriod:
     def get_days(self) -> List[Dict[str, str]]:
         """Get all days in this pay period as a list of day objects"""
         days = []
+        start = datetime.strptime(self.start_date, '%Y-%m-%d')
+        end = datetime.strptime(self.end_date, '%Y-%m-%d')
         
         current = start
         while current <= end:
             days.append({
+                'date': current.strftime('%Y-%m-%d'),
+                'day': current.strftime('%A').upper()
             })
             current += timedelta(days=1)
         
@@ -120,5 +128,9 @@ class PayPeriod:
     def generate_name_from_dates(start_date: str, end_date: str) -> str:
         """Generate a pay period name from start and end dates"""
         try:
+            start = datetime.strptime(start_date, '%Y-%m-%d')
+            end = datetime.strptime(end_date, '%Y-%m-%d')
+            return f"{start.strftime('%m/%d/%y')} to {end.strftime('%m/%d/%y')}"
         except ValueError:
             # Fallback to current date if dates are invalid
+            return f"Pay Period {datetime.now().strftime('%m/%d/%y')}"
