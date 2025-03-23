@@ -1,0 +1,86 @@
+{% extends "layout.html" %}
+
+{% block title %}Pay Periods - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Pay Periods</h1>
+        <a href="{{ url_for('pay_periods.add') }}" class="btn btn-primary">Add Pay Period</a>
+    </div>
+    
+    {% if pay_periods %}
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Start Date</th>
+                <th>End Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for period in pay_periods %}
+            <tr>
+                <td>{{ period.name }}</td>
+                <td>{{ period.start_date }}</td>
+                <td>{{ period.end_date }}</td>
+                <td>
+                    <a href="{{ url_for('pay_periods.edit', period_id=period.id) }}" class="btn btn-secondary">Edit</a>
+                    <button onclick="confirmDelete('{{ period.id }}', '{{ period.name }}')" class="btn btn-danger">Delete</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="alert alert-warning">
+        No pay periods found. Add a pay period to get started.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="delete-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.5); z-index: 100;">
+    <div style="background-color: white; margin: 100px auto; padding: 20px; width: 80%; max-width: 500px; border-radius: 8px;">
+        <h2>Confirm Delete</h2>
+        <p id="delete-message">Are you sure you want to delete this pay period?</p>
+        <p class="alert alert-warning">
+            <strong>Warning:</strong> Deleting a pay period will also delete all timesheet entries associated with it.
+        </p>
+        <div style="display: flex; justify-content: flex-end; gap:.75rem;">
+            <button onclick="closeModal()" class="btn btn-secondary">Cancel</button>
+            <form id="delete-form" method="POST" action="">
+                <button type="submit" class="btn btn-danger">Delete</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    function confirmDelete(periodId, periodName) {
+        // Update the form action
+        document.getElementById('delete-form').action = "{{ url_for('pay_periods.delete', period_id='ID_PLACEHOLDER') }}".replace('ID_PLACEHOLDER', periodId);
+        
+        // Update the message
+        document.getElementById('delete-message').textContent = `Are you sure you want to delete the pay period "${periodName}"? This cannot be undone.`;
+        
+        // Show the modal
+        document.getElementById('delete-modal').style.display = 'block';
+    }
+    
+    function closeModal() {
+        document.getElementById('delete-modal').style.display = 'none';
+    }
+    
+    // Close the modal when clicking outside of it
+    window.onclick = function(event) {
+        const modal = document.getElementById('delete-modal');
+        if (event.target === modal) {
+            closeModal();
+        }
+    }
+</script>
+{% endblock %} 

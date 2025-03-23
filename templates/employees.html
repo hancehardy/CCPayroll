@@ -19,9 +19,10 @@
                         <thead>
                             <tr>
                                 <th>Name</th>
-                                <th>Hourly Rate</th>
+                                <th>Pay Type</th>
+                                <th>Pay Rate</th>
                                 <th>Install Crew</th>
-                                <th>Installer Role</th>
+                                <th>Position</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -29,7 +30,26 @@
                             {% for employee in employees %}
                             <tr>
                                 <td>{{ employee.name }}</td>
-                                <td>{% if employee.rate %}${{ employee.rate }}/hour{% else %}Not set{% endif %}</td>
+                                <td>
+                                    {% if employee.pay_type == 'salary' %}
+                                        <span class="badge bg-info">Salary</span>
+                                    {% elif employee.pay_type == 'commission' %}
+                                        <span class="badge bg-warning text-dark">Commission</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Hourly</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if employee.pay_type == 'hourly' and employee.rate %}
+                                        ${{ employee.rate }}/hour
+                                    {% elif employee.pay_type == 'salary' and employee.salary %}
+                                        ${{ employee.salary }}/year
+                                    {% elif employee.pay_type == 'commission' and employee.commission_rate %}
+                                        {{ employee.commission_rate }}%
+                                    {% else %}
+                                        Not set
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {% if employee.install_crew and employee.install_crew|int > 0 %}
                                         <span class="badge bg-success">Crew #{{ employee.install_crew }}</span>
@@ -38,10 +58,18 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if employee.installer_role == 'lead' %}
+                                    {% if employee.position == 'lead' %}
                                         <span class="badge bg-primary">Lead Installer</span>
-                                    {% elif employee.installer_role == 'assistant' %}
+                                    {% elif employee.position == 'assistant' %}
                                         <span class="badge bg-info">Assistant Installer</span>
+                                    {% elif employee.position == 'project_manager' %}
+                                        <span class="badge bg-success">Project Manager</span>
+                                    {% elif employee.position == 'ceo' %}
+                                        <span class="badge bg-danger">CEO</span>
+                                    {% elif employee.position == 'engineer' %}
+                                        <span class="badge bg-warning text-dark">Engineer</span>
+                                    {% elif employee.position == 'salesman' %}
+                                        <span class="badge bg-dark">Salesman</span>
                                     {% else %}
                                         <span class="badge bg-secondary">Not an Installer</span>
                                     {% endif %}

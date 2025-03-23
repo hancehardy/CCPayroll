@@ -1,0 +1,77 @@
+{% extends "layout.html" %}
+
+{% block title %}Timesheets - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Timesheets</h1>
+    </div>
+    
+    <div class="timesheet-selector">
+        <h3>Select Employee and Pay Period</h3>
+        
+        {% if not pay_periods %}
+        <div class="alert alert-warning">
+            No pay periods available. Please <a href="{{ url_for('pay_periods.add') }}">create a pay period</a> first.
+        </div>
+        {% elif not employees %}
+        <div class="alert alert-warning">
+            No employees available. Please <a href="{{ url_for('employees.add') }}">add an employee</a> first.
+        </div>
+        {% else %}
+        <form id="timesheet-form" action="{{ url_for('timesheet.view', period_id='placeholder', employee_id='placeholder') }}" method="GET">
+            <div class="form-group">
+                <label for="employee">Employee</label>
+                <select class="form-control" id="employee" name="employee" required>
+                    <option value="">Select Employee</option>
+                    {% for employee in employees %}
+                    <option value="{{ employee.id }}">{{ employee.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="period">Pay Period</label>
+                <select class="form-control" id="period" name="period" required>
+                    <option value="">Select Pay Period</option>
+                    {% for period in pay_periods %}
+                    <option value="{{ period.id }}">{{ period.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">View Timesheet</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('timesheet-form');
+        if (form) {
+            form.addEventListener('submit', function(event) {
+                event.preventDefault();
+                
+                const employeeId = document.getElementById('employee').value;
+                const periodId = document.getElementById('period').value;
+                
+                if (!employeeId || !periodId) {
+                    alert('Please select both an employee and a pay period.');
+                    return;
+                }
+                
+                // Navigate to the timesheet view page
+                window.location.href = "{{ url_for('timesheet.view', period_id='PERIOD_ID', employee_id='EMPLOYEE_ID') }}"
+                    .replace('PERIOD_ID', periodId)
+                    .replace('EMPLOYEE_ID', employeeId);
+            });
+        }
+    });
+</script>
+{% endblock %} 

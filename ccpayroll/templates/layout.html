@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Creative Closets Payroll{% endblock %}</title>
+    
+    <!-- CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    
+    <!-- Favicon -->
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <header>
+        <div class="container">
+            <nav class="nav">
+                <a href="{{ url_for('main.index') }}" class="nav-brand">Creative Closets Payroll</a>
+                <ul class="nav-links">
+                    <li><a href="{{ url_for('main.index') }}">Dashboard</a></li>
+                    <li><a href="{{ url_for('employees.index') }}">Employees</a></li>
+                    <li><a href="{{ url_for('pay_periods.index') }}">Pay Periods</a></li>
+                    <li><a href="{{ url_for('timesheet.index') }}">Timesheets</a></li>
+                    <li><a href="{{ url_for('reports.index') }}">Reports</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+    
+    <main>
+        <div class="container">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+    
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-logo">
+                    Creative Closets Payroll
+                </div>
+                <ul class="footer-links">
+                    <li><a href="{{ url_for('main.index') }}">Dashboard</a></li>
+                    <li><a href="{{ url_for('employees.index') }}">Employees</a></li>
+                    <li><a href="{{ url_for('pay_periods.index') }}">Pay Periods</a></li>
+                    <li><a href="{{ url_for('timesheet.index') }}">Timesheets</a></li>
+                    <li><a href="{{ url_for('reports.index') }}">Reports</a></li>
+                </ul>
+            </div>
+            <div class="copyright">
+                &copy; {{ now.year }} Creative Closets. All rights reserved.
+            </div>
+        </div>
+    </footer>
+    
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts_extra %}{% endblock %}
+</body>
+</html> 

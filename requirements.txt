@@ -1,8 +1,6 @@
-Flask==2.3.3
-pandas==2.2.3
-openpyxl==3.1.5
-matplotlib==3.9.4
-Werkzeug==2.3.7
-Flask-WTF==1.2.1
-WTForms==3.1.1
-python-dateutil==2.9.0.post0 
+flask==2.3.3
+pandas==2.0.3
+pdfkit==1.0.0
+wkhtmltopdf==0.2.0
+pytest==7.4.0
+python-dotenv==1.0.0 

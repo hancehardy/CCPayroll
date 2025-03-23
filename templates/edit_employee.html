@@ -17,11 +17,35 @@
                         <div class="form-text">Enter the employee's name in ALL CAPS.</div>
                     </div>
                     <div class="mb-3">
+                        <label for="pay_type" class="form-label">Pay Type</label>
+                        <select class="form-select" id="pay_type" name="pay_type">
+                            <option value="hourly" {% if employee.pay_type == 'hourly' or not employee.pay_type %}selected{% endif %}>Hourly</option>
+                            <option value="salary" {% if employee.pay_type == 'salary' %}selected{% endif %}>Salary</option>
+                            <option value="commission" {% if employee.pay_type == 'commission' %}selected{% endif %}>Commission</option>
+                        </select>
+                        <div class="form-text">Select how this employee is paid.</div>
+                    </div>
+                    <div class="mb-3 hourly-pay">
                         <label for="rate" class="form-label">Hourly Rate</label>
                         <div class="input-group">
                             <span class="input-group-text">$</span>
                             <input type="number" class="form-control" id="rate" name="rate" step="0.01" min="0" value="{{ employee.rate }}">
                             <span class="input-group-text">/hour</span>
+                        </div>
+                    </div>
+                    <div class="mb-3 salary-pay" style="display: none;">
+                        <label for="salary" class="form-label">Annual Salary</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="salary" name="salary" step="0.01" min="0" value="{{ employee.salary }}">
+                            <span class="input-group-text">/year</span>
+                        </div>
+                    </div>
+                    <div class="mb-3 commission-pay" style="display: none;">
+                        <label for="commission_rate" class="form-label">Commission Rate</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="commission_rate" name="commission_rate" step="0.01" min="0" max="100" value="{{ employee.commission_rate }}">
+                            <span class="input-group-text">%</span>
                         </div>
                     </div>
                     <div class="mb-3">
@@ -30,13 +54,17 @@
                         <div class="form-text">Enter the crew number this employee belongs to (0 if not part of any install crew).</div>
                     </div>
                     <div class="mb-3">
-                        <label for="installer_role" class="form-label">Installer Role</label>
-                        <select class="form-select" id="installer_role" name="installer_role">
-                            <option value="none" {% if employee.installer_role == 'none' or not employee.installer_role %}selected{% endif %}>Not an Installer</option>
-                            <option value="lead" {% if employee.installer_role == 'lead' %}selected{% endif %}>Lead Installer</option>
-                            <option value="assistant" {% if employee.installer_role == 'assistant' %}selected{% endif %}>Assistant Installer</option>
+                        <label for="position" class="form-label">Position</label>
+                        <select class="form-select" id="position" name="position">
+                            <option value="none" {% if employee.position == 'none' or not employee.position %}selected{% endif %}>Not an Installer</option>
+                            <option value="lead" {% if employee.position == 'lead' %}selected{% endif %}>Lead Installer</option>
+                            <option value="assistant" {% if employee.position == 'assistant' %}selected{% endif %}>Assistant Installer</option>
+                            <option value="project_manager" {% if employee.position == 'project_manager' %}selected{% endif %}>Project Manager</option>
+                            <option value="ceo" {% if employee.position == 'ceo' %}selected{% endif %}>CEO</option>
+                            <option value="engineer" {% if employee.position == 'engineer' %}selected{% endif %}>Engineer</option>
+                            <option value="salesman" {% if employee.position == 'salesman' %}selected{% endif %}>Salesman</option>
                         </select>
-                        <div class="form-text">Select the installer role for this employee.</div>
+                        <div class="form-text">Select the position for this employee.</div>
                     </div>
                     <div class="d-flex justify-content-between">
                         <a href="{{ url_for('employees') }}" class="btn btn-secondary">
@@ -51,4 +79,30 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const payTypeSelect = document.getElementById('pay_type');
+    const hourlyPayDiv = document.querySelector('.hourly-pay');
+    const salaryPayDiv = document.querySelector('.salary-pay');
+    const commissionPayDiv = document.querySelector('.commission-pay');
+    
+    // Function to show/hide pay fields based on selected pay type
+    function togglePayFields() {
+        const selectedPayType = payTypeSelect.value;
+        
+        hourlyPayDiv.style.display = selectedPayType === 'hourly' ? 'block' : 'none';
+        salaryPayDiv.style.display = selectedPayType === 'salary' ? 'block' : 'none';
+        commissionPayDiv.style.display = selectedPayType === 'commission' ? 'block' : 'none';
+    }
+    
+    // Initial toggle based on default selection
+    togglePayFields();
+    
+    // Listen for changes to pay type
+    payTypeSelect.addEventListener('change', togglePayFields);
+});
+</script>
 {% endblock %} 

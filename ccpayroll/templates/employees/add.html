@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+
+{% block title %}Add Employee - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Add Employee</h1>
+        <a href="{{ url_for('employees.index') }}" class="btn btn-secondary">Back to Employees</a>
+    </div>
+    
+    <form method="POST" action="{{ url_for('employees.add') }}">
+        <div class="form-group">
+            <label for="name">Name *</label>
+            <input type="text" class="form-control" id="name" name="name" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="position">Position</label>
+            <input type="text" class="form-control" id="position" name="position">
+        </div>
+        
+        <div class="form-group">
+            <label for="pay_type">Pay Type *</label>
+            <select class="form-control" id="pay_type" name="pay_type" required>
+                <option value="hourly">Hourly</option>
+                <option value="salary">Salary</option>
+                <option value="commission">Commission</option>
+                <option value="salary_plus_hourly">Salary + Hourly</option>
+            </select>
+        </div>
+        
+        <div class="form-group rate-field">
+            <label for="rate">Hourly Rate ($)</label>
+            <input type="number" step="0.01" min="0" class="form-control" id="rate" name="rate" value="0">
+        </div>
+        
+        <div class="form-group salary-field" style="display: none;">
+            <label for="salary">Salary ($)</label>
+            <input type="number" step="0.01" min="0" class="form-control" id="salary" name="salary" value="0">
+        </div>
+        
+        <div class="form-group commission-field" style="display: none;">
+            <label for="commission_rate">Commission Rate (%)</label>
+            <input type="number" step="0.01" min="0" max="100" class="form-control" id="commission_rate" name="commission_rate" value="0">
+            <small class="form-text text-muted">Enter percentage as a number (e.g. 5 for 5%)</small>
+        </div>
+        
+        <div class="form-group">
+            <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="install_crew" name="install_crew">
+                <label class="form-check-label" for="install_crew">Install Crew</label>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <button type="submit" class="btn btn-primary">Add Employee</button>
+            <a href="{{ url_for('employees.index') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %} 

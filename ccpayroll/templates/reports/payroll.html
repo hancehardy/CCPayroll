@@ -1,0 +1,150 @@
+{% extends "layout.html" %}
+
+{% block title %}Payroll Report - {{ period.name }} - Creative Closets Payroll{% endblock %}
+
+{% block head_extra %}
+<style>
+    @media print {
+        header, footer, .no-print {
+            display: none;
+        }
+        
+        body {
+            font-size: 12pt;
+            color: black;
+            background-color: white;
+        }
+        
+        .card {
+            border: none;
+            box-shadow: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+    }
+    
+    .report-header {
+        text-align: center;
+        margin-bottom: 1.5rem;
+    }
+    
+    .report-date {
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+        color: #666;
+    }
+    
+    .report-table th,
+    .report-table td {
+        text-align: right;
+    }
+    
+    .report-table th:first-child,
+    .report-table td:first-child,
+    .report-table th:nth-child(2),
+    .report-table td:nth-child(2) {
+        text-align: left;
+    }
+    
+    .report-footer {
+        margin-top: 2rem;
+        font-size: 0.9rem;
+        color: #666;
+        text-align: center;
+    }
+    
+    .report-total {
+        font-weight: 700;
+        text-align: right;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 2px solid #ddd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Payroll Report</h1>
+        {% if preview %}
+        <div>
+            <a href="{{ url_for('reports.payroll', period_id=period.id) }}" class="btn btn-primary">Download PDF</a>
+            <a href="{{ url_for('reports.index') }}" class="btn btn-secondary">Back to Reports</a>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="report-header">
+        <h2>Payroll Report</h2>
+        <h3>{{ period.name }}</h3>
+        <p>{{ format_date(period.start_date) }} to {{ format_date(period.end_date) }}</p>
+    </div>
+    
+    <div class="report-date">
+        Generated: {{ generated_at if generated_at else now().strftime('%Y-%m-%d %H:%M:%S') }}
+    </div>
+    
+    {% if employees %}
+    <table class="table report-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Position</th>
+                <th>Pay Type</th>
+                <th>Regular Hours</th>
+                <th>Overtime Hours</th>
+                <th>Regular Pay</th>
+                <th>Overtime Pay</th>
+                <th>Total Pay</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% set grand_total = 0 %}
+            {% for employee in employees %}
+            <tr>
+                <td>{{ employee.name }}</td>
+                <td>{{ employee.position }}</td>
+                <td>{{ employee.pay_type }}</td>
+                <td>{{ employee.regular_hours|round(1) }}</td>
+                <td>{{ employee.overtime_hours|round(1) }}</td>
+                <td>{{ format_currency(employee.regular_pay) }}</td>
+                <td>{{ format_currency(employee.overtime_pay) }}</td>
+                <td>{{ format_currency(employee.total_pay) }}</td>
+            </tr>
+            {% set grand_total = grand_total + employee.total_pay %}
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div class="report-total">
+        <p><strong>Grand Total:</strong> {{ format_currency(grand_total) }}</p>
+    </div>
+    {% else %}
+    <div class="alert alert-warning">
+        No payroll data available for this pay period.
+    </div>
+    {% endif %}
+    
+    <div class="report-footer">
+        <p>Creative Closets Payroll System</p>
+    </div>
+</div>
+{% endblock %} 

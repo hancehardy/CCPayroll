@@ -63,16 +63,58 @@ def init_db():
         )
         ''')
         
-        # Create employees table
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS employees (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            rate REAL,
-            install_crew INTEGER DEFAULT 0,
-            installer_role TEXT
-        )
-        ''')
+        # Check if employees table exists and if we need to migrate
+        cursor.execute("PRAGMA table_info(employees)")
+        columns = cursor.fetchall()
+        column_names = [column['name'] for column in columns]
+        
+        if not columns:
+            # Create employees table if it doesn't exist
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS employees (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                rate REAL,
+                install_crew INTEGER DEFAULT 0,
+                position TEXT,
+                pay_type TEXT DEFAULT 'hourly',
+                salary REAL,
+                commission_rate REAL
+            )
+            ''')
+        elif 'installer_role' in column_names and 'position' not in column_names:
+            # Migrate from installer_role to position
+            logger.info("Migrating employees table from installer_role to position")
+            # Create new table with updated schema
+            cursor.execute('''
+            CREATE TABLE employees_new (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                rate REAL,
+                install_crew INTEGER DEFAULT 0,
+                position TEXT,
+                pay_type TEXT DEFAULT 'hourly',
+                salary REAL,
+                commission_rate REAL
+            )
+            ''')
+            # Copy data from old table to new table
+            cursor.execute('''
+            INSERT INTO employees_new (id, name, rate, install_crew, position)
+            SELECT id, name, rate, install_crew, installer_role FROM employees
+            ''')
+            # Drop old table
+            cursor.execute('DROP TABLE employees')
+            # Rename new table to employees
+            cursor.execute('ALTER TABLE employees_new RENAME TO employees')
+            logger.info("Migration complete")
+        elif 'pay_type' not in column_names:
+            # Add pay_type, salary, and commission_rate columns if they don't exist
+            logger.info("Adding pay_type, salary, and commission_rate columns to employees table")
+            cursor.execute('ALTER TABLE employees ADD COLUMN pay_type TEXT DEFAULT "hourly"')
+            cursor.execute('ALTER TABLE employees ADD COLUMN salary REAL')
+            cursor.execute('ALTER TABLE employees ADD COLUMN commission_rate REAL')
+            logger.info("Columns added successfully")
         
         # Create timesheet table
         cursor.execute('''
@@ -192,9 +234,22 @@ def save_employee(employee_data):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT OR REPLACE INTO employees (id, name, rate, install_crew, installer_role) VALUES (?, ?, ?, ?, ?)',
-            (employee_data['id'], employee_data['name'], employee_data['rate'], 
-             employee_data['install_crew'], employee_data['installer_role'])
+            '''
+            INSERT OR REPLACE INTO employees (
+                id, name, rate, install_crew, position, 
+                pay_type, salary, commission_rate
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                employee_data['id'], 
+                employee_data['name'], 
+                employee_data.get('rate'), 
+                employee_data['install_crew'], 
+                employee_data['position'],
+                employee_data.get('pay_type', 'hourly'),
+                employee_data.get('salary'),
+                employee_data.get('commission_rate')
+            )
         )
         conn.commit()
 
@@ -386,9 +441,12 @@ def employees():
 def add_employee():
     if request.method == 'POST':
         name = request.form.get('name')
-        rate = request.form.get('rate')
+        pay_type = request.form.get('pay_type', 'hourly')
+        rate = request.form.get('rate') if pay_type == 'hourly' else None
+        salary = request.form.get('salary') if pay_type == 'salary' else None
+        commission_rate = request.form.get('commission_rate') if pay_type == 'commission' else None
         install_crew = request.form.get('install_crew', '0')
-        installer_role = request.form.get('installer_role', 'none')
+        position = request.form.get('position', 'none')
         
         # Convert install_crew to integer
         try:
@@ -412,9 +470,12 @@ def add_employee():
         employee_data = {
             'id': str(uuid.uuid4()),
             'name': name,
+            'pay_type': pay_type,
             'rate': rate,
+            'salary': salary,
+            'commission_rate': commission_rate,
             'install_crew': install_crew,
-            'installer_role': installer_role
+            'position': position
         }
         save_employee(employee_data)
         
@@ -438,9 +499,12 @@ def edit_employee(employee_id):
     
     if request.method == 'POST':
         name = request.form.get('name')
-        rate = request.form.get('rate')
+        pay_type = request.form.get('pay_type', 'hourly')
+        rate = request.form.get('rate') if pay_type == 'hourly' else None
+        salary = request.form.get('salary') if pay_type == 'salary' else None
+        commission_rate = request.form.get('commission_rate') if pay_type == 'commission' else None
         install_crew = request.form.get('install_crew', '0')
-        installer_role = request.form.get('installer_role', 'none')
+        position = request.form.get('position', 'none')
         
         # Convert install_crew to integer
         try:
@@ -456,9 +520,12 @@ def edit_employee(employee_id):
         employee = {
             'id': employee_id,
             'name': name,
+            'pay_type': pay_type,
             'rate': rate,
+            'salary': salary,
+            'commission_rate': commission_rate,
             'install_crew': install_crew,
-            'installer_role': installer_role
+            'position': position
         }
         
         save_employee(employee)
@@ -486,13 +553,23 @@ def pay_periods():
 @app.route('/pay-periods/add', methods=['GET', 'POST'])
 def add_pay_period():
     if request.method == 'POST':
-        name = request.form.get('name')
+        name = request.form.get('name', '').strip()
         start_date = request.form.get('start_date')
         end_date = request.form.get('end_date')
         
-        if not all([name, start_date, end_date]):
-            flash('All fields are required', 'danger')
+        if not all([start_date, end_date]):
+            flash('Start date and end date are required', 'danger')
             return redirect(url_for('add_pay_period'))
+        
+        # If name is not provided, generate one from date range
+        if not name:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d')
+                end = datetime.strptime(end_date, '%Y-%m-%d')
+                name = f"{start.strftime('%m/%d/%y')} to {end.strftime('%m/%d/%y')}"
+            except Exception as e:
+                app.logger.error(f"Error generating pay period name: {str(e)}")
+                name = f"Pay Period {datetime.now().strftime('%m/%d/%y')}"
         
         # Create pay period
         period_data = {
@@ -552,21 +629,58 @@ def timesheet(period_id):
         })
         current_date += timedelta(days=1)
     
-    # Group employees by install crew
-    crews = {}
+    # Organize employees by position and crew
+    position_groups = {
+        'install_crews': {},  # Installers (grouped by crew)
+        'project_managers': [],
+        'engineers': [],
+        'salesmen': [],
+        'ceo': [],
+        'other': []
+    }
+    
+    # First, organize installers by crew
     for employee in employees:
+        position = employee.get('position', 'none')
         crew_num = employee.get('install_crew', 0)
-        if crew_num not in crews:
-            crews[crew_num] = []
-        crews[crew_num].append(employee)
+        
+        if position in ['lead', 'assistant'] and crew_num > 0:
+            if crew_num not in position_groups['install_crews']:
+                position_groups['install_crews'][crew_num] = []
+            position_groups['install_crews'][crew_num].append(employee)
+        elif position == 'project_manager':
+            position_groups['project_managers'].append(employee)
+        elif position == 'engineer':
+            position_groups['engineers'].append(employee)
+        elif position == 'salesman':
+            position_groups['salesmen'].append(employee)
+        elif position == 'ceo':
+            position_groups['ceo'].append(employee)
+        else:
+            position_groups['other'].append(employee)
+    
+    # Sort installers within each crew - lead installers first, then assistant installers
+    for crew_num in position_groups['install_crews']:
+        position_groups['install_crews'][crew_num] = sorted(position_groups['install_crews'][crew_num], 
+            key=lambda emp: (
+                0 if emp.get('position') == 'lead' else 
+                1 if emp.get('position') == 'assistant' else 2,
+                emp.get('name', '')  # Secondary sort by name
+            )
+        )
     
     # Sort crews by number
-    sorted_crews = sorted(crews.items())
+    sorted_install_crews = sorted(position_groups['install_crews'].items())
+    
+    # Sort other groups by name
+    for key in ['project_managers', 'engineers', 'salesmen', 'ceo', 'other']:
+        position_groups[key] = sorted(position_groups[key], key=lambda emp: emp.get('name', ''))
     
     return render_template('timesheet.html', 
                           period=period, 
                           employees=employees,
-                          crews=sorted_crews,
+                          position_groups=position_groups,
+                          install_crews=sorted_install_crews,
                           timesheet=timesheet_data, 
                           days=days)
 
@@ -730,7 +844,7 @@ def import_data():
                                 'name': emp_name,
                                 'rate': '',
                                 'install_crew': 0,
-                                'installer_role': 'none'
+                                'position': 'none'
                             })
                     
                     save_employee(employees)
@@ -819,89 +933,96 @@ def export_data(period_id):
     timesheet_data = get_timesheet(period_id)
     employees = get_employees()
     
-    # Group employees by install crew
-    crews = {}
+    # Organize employees by position and crew similar to the timesheet route
+    position_groups = {
+        'install_crews': {},  # Installers (grouped by crew)
+        'project_managers': [],
+        'engineers': [],
+        'salesmen': [],
+        'ceo': [],
+        'other': []
+    }
+    
+    # First, organize installers by crew
     for employee in employees:
+        position = employee.get('position', 'none')
         crew_num = employee.get('install_crew', 0)
-        if crew_num not in crews:
-            crews[crew_num] = []
-        crews[crew_num].append(employee)
+        
+        if position in ['lead', 'assistant'] and crew_num > 0:
+            if crew_num not in position_groups['install_crews']:
+                position_groups['install_crews'][crew_num] = []
+            position_groups['install_crews'][crew_num].append(employee)
+        elif position == 'project_manager':
+            position_groups['project_managers'].append(employee)
+        elif position == 'engineer':
+            position_groups['engineers'].append(employee)
+        elif position == 'salesman':
+            position_groups['salesmen'].append(employee)
+        elif position == 'ceo':
+            position_groups['ceo'].append(employee)
+        else:
+            position_groups['other'].append(employee)
+    
+    # Sort installers within each crew - lead installers first, then assistant installers
+    for crew_num in position_groups['install_crews']:
+        position_groups['install_crews'][crew_num] = sorted(position_groups['install_crews'][crew_num], 
+            key=lambda emp: (
+                0 if emp.get('position') == 'lead' else 
+                1 if emp.get('position') == 'assistant' else 2,
+                emp.get('name', '')  # Secondary sort by name
+            )
+        )
     
     # Sort crews by number
-    sorted_crews = sorted(crews.items())
+    sorted_install_crews = sorted(position_groups['install_crews'].items())
+    
+    # Sort other groups by name
+    for key in ['project_managers', 'engineers', 'salesmen', 'ceo', 'other']:
+        position_groups[key] = sorted(position_groups[key], key=lambda emp: emp.get('name', ''))
     
     # Create a DataFrame for export
     data = []
     
     # Add title
     data.append(['CREATIVE CLOSETS PAYROLL TIME SHEET'])
+    data.append([f'PAY PERIOD: {period["name"]}'])
     data.append([])  # Empty row
     
-    # Process each crew
-    for crew_num, crew_employees in sorted_crews:
-        if crew_num > 0:  # Only process install crews
-            data.append([f'INSTALL CREW # {crew_num}'])
-            
-            for employee in crew_employees:
-                # Add employee name
-                data.append([employee['name']])
-                
-                # Add header row
-                header = ['DAY', 'DATE', 'PROJECT NAME', 'DAYS', 'INSTALL', 'HOURS', 'PAY']
-                data.append(header)
-                
-                # Add days
-                total_pay = 0
-                for day, day_data in sorted(timesheet_data.get(employee['name'], {}).items()):
-                    day_row = [
-                        day_data.get('day', ''),
-                        day,
-                        day_data.get('project_name', ''),
-                        day_data.get('install_days', ''),
-                        day_data.get('install', ''),
-                        day_data.get('hours', ''),
-                        day_data.get('pay', '')
-                    ]
-                    data.append(day_row)
-                    
-                    # Calculate total pay
-                    if day_data.get('pay'):
-                        try:
-                            total_pay += float(day_data['pay'])
-                        except (ValueError, TypeError):
-                            pass
-                
-                # Add total row
-                data.append(['', '', '', '', '', 'TOTAL', f'${total_pay:.2f}'])
-                
-                # Add empty row
-                data.append([])
-    
-    # Process non-crew employees
-    if 0 in crews:
-        data.append(['OTHER EMPLOYEES'])
+    # Process each install crew
+    for crew_num, crew_employees in sorted_install_crews:
+        data.append([f'INSTALL CREW # {crew_num}'])
         
-        for employee in crews[0]:
+        for employee in crew_employees:
             # Add employee name
             data.append([employee['name']])
             
             # Add header row
-            header = ['DAY', 'DATE', 'PROJECT NAME', 'HOURS', 'PAY']
+            header = ['DAY', 'DATE', 'PROJECT NAME', 'DAYS', 'INSTALL', 'HOURS', 'PAY']
             data.append(header)
             
             # Add days
             total_pay = 0
-            for day, day_data in sorted(timesheet_data.get(employee['name'], {}).items()):
+            total_hours = 0
+            for day in sorted(timesheet_data.get(employee['name'], {}).keys()):
+                day_data = timesheet_data[employee['name']][day]
                 day_row = [
                     day_data.get('day', ''),
                     day,
                     day_data.get('project_name', ''),
+                    day_data.get('install_days', ''),
+                    day_data.get('install', ''),
                     day_data.get('hours', ''),
                     day_data.get('pay', '')
                 ]
                 data.append(day_row)
                 
-                # Calculate total pay
+                # Calculate totals
+                if day_data.get('hours'):
+                    try:
+                        total_hours += float(day_data['hours'])
+                    except (ValueError, TypeError):
+                        pass
+                
                 if day_data.get('pay'):
                     try:
                         total_pay += float(day_data['pay'])
@@ -909,10 +1030,106 @@ def export_data(period_id):
                         pass
             
             # Add total row
-            data.append(['', '', '', 'TOTAL', f'${total_pay:.2f}'])
+            data.append(['', '', '', '', '', f'{total_hours:.1f}', f'${total_pay:.2f}'])
             
             # Add empty row
             data.append([])
+    
+    # Process non-install crew employees by position group
+    position_titles = {
+        'project_managers': 'PROJECT MANAGERS',
+        'engineers': 'ENGINEERS',
+        'salesmen': 'SALES TEAM',
+        'ceo': 'EXECUTIVE',
+        'other': 'OTHER EMPLOYEES'
+    }
+    
+    for group_key, title in position_titles.items():
+        if position_groups[group_key]:
+            data.append([title])
+            
+            for employee in position_groups[group_key]:
+                # Add employee name
+                employee_display_name = employee['name']
+                if employee.get('pay_type') == 'salary' and employee.get('salary'):
+                    employee_display_name += f" (Salary: ${employee['salary']}/year)"
+                data.append([employee_display_name])
+                
+                # Add header row
+                is_salaried = employee.get('pay_type') == 'salary' and group_key in ['project_managers', 'engineers', 'ceo']
+                
+                if is_salaried:
+                    # For salaried project managers, engineers, and executives, show a single row
+                    header = ['PERIOD', 'PAY TYPE', 'PROJECT NAME', 'HOURS', 'PAY']
+                    data.append(header)
+                    
+                    # Calculate weekly pay (annual salary / 52 weeks)
+                    weekly_pay = 0
+                    if employee.get('salary'):
+                        try:
+                            weekly_pay = float(employee['salary']) / 52
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Add a single row for the pay period
+                    first_day = sorted(timesheet_data.get(employee['name'], {}).keys())[0] if employee['name'] in timesheet_data and timesheet_data[employee['name']] else None
+                    project_name = ""
+                    pay_value = str(round(weekly_pay, 2))
+                    
+                    if first_day and employee['name'] in timesheet_data and first_day in timesheet_data[employee['name']]:
+                        day_data = timesheet_data[employee['name']][first_day]
+                        project_name = day_data.get('project_name', '')
+                        # If pay was manually set, use that instead of calculated weekly pay
+                        if day_data.get('pay'):
+                            pay_value = day_data['pay']
+                    
+                    data.append([
+                        period['name'],
+                        'Salary',
+                        project_name,
+                        'Salaried',
+                        pay_value
+                    ])
+                    
+                    # Add total row
+                    data.append(['', '', '', '', pay_value])
+                else:
+                    # Standard hourly employees
+                    header = ['DAY', 'DATE', 'PROJECT NAME', 'HOURS', 'PAY']
+                    data.append(header)
+                    
+                    # Add days
+                    total_pay = 0
+                    total_hours = 0
+                    for day in sorted(timesheet_data.get(employee['name'], {}).keys()):
+                        day_data = timesheet_data[employee['name']][day]
+                        day_row = [
+                            day_data.get('day', ''),
+                            day,
+                            day_data.get('project_name', ''),
+                            day_data.get('hours', ''),
+                            day_data.get('pay', '')
+                        ]
+                        data.append(day_row)
+                        
+                        # Calculate totals
+                        if day_data.get('hours'):
+                            try:
+                                total_hours += float(day_data['hours'])
+                            except (ValueError, TypeError):
+                                pass
+                        
+                        if day_data.get('pay'):
+                            try:
+                                total_pay += float(day_data['pay'])
+                            except (ValueError, TypeError):
+                                pass
+                    
+                    # Add total row
+                    data.append(['', '', '', f'{total_hours:.1f}', f'${total_pay:.2f}'])
+                
+                # Add empty row
+                data.append([])
     
     # Create DataFrame
     df = pd.DataFrame(data)
@@ -942,26 +1159,78 @@ def fix_timesheet(period_id):
 # Initialize with sample data if empty
 if not os.path.exists(os.path.join(DATA_FOLDER, 'employees.json')):
     sample_employees = [
+        # Hourly employees - installers
         {
             'id': str(uuid.uuid4()),
             'name': 'VICTOR LAZO',
+            'pay_type': 'hourly',
             'rate': '20',
+            'salary': None,
+            'commission_rate': None,
             'install_crew': 1,
-            'installer_role': 'lead'
+            'position': 'lead'
         },
         {
             'id': str(uuid.uuid4()),
             'name': 'SAMUEL CASTILLO',
+            'pay_type': 'hourly',
             'rate': '18',
+            'salary': None,
+            'commission_rate': None,
             'install_crew': 1,
-            'installer_role': 'assistant'
+            'position': 'assistant'
         },
         {
             'id': str(uuid.uuid4()),
             'name': 'JOSE MEDINA',
+            'pay_type': 'hourly',
             'rate': '22',
+            'salary': None,
+            'commission_rate': None,
             'install_crew': 0,
-            'installer_role': 'none'
+            'position': 'none'
+        },
+        # Salary employees
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'ROBERT SMITH',
+            'pay_type': 'salary',
+            'rate': None,
+            'salary': '85000',
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'project_manager'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'LISA JOHNSON',
+            'pay_type': 'salary',
+            'rate': None,
+            'salary': '150000',
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'ceo'
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'MICHAEL CHEN',
+            'pay_type': 'salary',
+            'rate': None,
+            'salary': '95000',
+            'commission_rate': None,
+            'install_crew': 0,
+            'position': 'engineer'
+        },
+        # Commission employees
+        {
+            'id': str(uuid.uuid4()),
+            'name': 'SARAH DAVIS',
+            'pay_type': 'commission',
+            'rate': None,
+            'salary': None,
+            'commission_rate': '12',
+            'install_crew': 0,
+            'position': 'salesman'
         }
     ]
     # Save each employee individually

@@ -1,0 +1,135 @@
+{% extends "layout.html" %}
+
+{% block title %}Reports - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Reports</h1>
+    </div>
+    
+    {% if not pay_periods %}
+    <div class="alert alert-warning">
+        No pay periods available. Please <a href="{{ url_for('pay_periods.add') }}">create a pay period</a> first.
+    </div>
+    {% else %}
+    <div class="report-section">
+        <h3>Payroll Reports</h3>
+        <p>Generate payroll reports for a specific pay period.</p>
+        
+        <form id="payroll-form" action="{{ url_for('reports.payroll', period_id='placeholder') }}" method="GET">
+            <div class="form-group">
+                <label for="payroll-period">Pay Period</label>
+                <select class="form-control" id="payroll-period" name="period" required>
+                    <option value="">Select Pay Period</option>
+                    {% for period in pay_periods %}
+                    <option value="{{ period.id }}">{{ period.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">Generate Payroll Report</button>
+                <button type="button" id="preview-payroll-btn" class="btn btn-secondary">Preview Report</button>
+            </div>
+        </form>
+    </div>
+    
+    <hr>
+    
+    <div class="report-section">
+        <h3>Timesheet Reports</h3>
+        <p>Generate timesheet reports for a specific pay period, optionally filtered by employee.</p>
+        
+        <form id="timesheet-form" action="{{ url_for('reports.timesheet', period_id='placeholder') }}" method="GET">
+            <div class="form-group">
+                <label for="timesheet-period">Pay Period</label>
+                <select class="form-control" id="timesheet-period" name="period" required>
+                    <option value="">Select Pay Period</option>
+                    {% for period in pay_periods %}
+                    <option value="{{ period.id }}">{{ period.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="timesheet-employee">Employee (Optional)</label>
+                <select class="form-control" id="timesheet-employee" name="employee">
+                    <option value="">All Employees</option>
+                    {% for employee in employees %}
+                    <option value="{{ employee.id }}">{{ employee.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">Generate Timesheet Report</button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const payrollForm = document.getElementById('payroll-form');
+        const previewBtn = document.getElementById('preview-payroll-btn');
+        const timesheetForm = document.getElementById('timesheet-form');
+        
+        if (payrollForm) {
+            payrollForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+                
+                const periodId = document.getElementById('payroll-period').value;
+                
+                if (!periodId) {
+                    alert('Please select a pay period.');
+                    return;
+                }
+                
+                // Navigate to the payroll report page
+                window.location.href = "{{ url_for('reports.payroll', period_id='PERIOD_ID') }}".replace('PERIOD_ID', periodId);
+            });
+        }
+        
+        if (previewBtn) {
+            previewBtn.addEventListener('click', function() {
+                const periodId = document.getElementById('payroll-period').value;
+                
+                if (!periodId) {
+                    alert('Please select a pay period.');
+                    return;
+                }
+                
+                // Navigate to the payroll preview page
+                window.location.href = "{{ url_for('reports.preview_payroll', period_id='PERIOD_ID') }}".replace('PERIOD_ID', periodId);
+            });
+        }
+        
+        if (timesheetForm) {
+            timesheetForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+                
+                const periodId = document.getElementById('timesheet-period').value;
+                const employeeId = document.getElementById('timesheet-employee').value;
+                
+                if (!periodId) {
+                    alert('Please select a pay period.');
+                    return;
+                }
+                
+                // Navigate to the timesheet report page
+                let url = "{{ url_for('reports.timesheet', period_id='PERIOD_ID') }}".replace('PERIOD_ID', periodId);
+                
+                if (employeeId) {
+                    url += `?employee_id=${employeeId}`;
+                }
+                
+                window.location.href = url;
+            });
+        }
+    });
+</script>
+{% endblock %} 

@@ -1,0 +1,100 @@
+{% extends "layout.html" %}
+
+{% block title %}Timesheet - {{ employee.name }} - {{ pay_period.name }} - Creative Closets Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Timesheet</h1>
+        <a href="{{ url_for('timesheet.index') }}" class="btn btn-secondary">Back to Timesheets</a>
+    </div>
+    
+    <div class="timesheet-info">
+        <div class="row" style="display: flex; flex-wrap: wrap; margin: 0 -10px;">
+            <div class="col" style="flex: 1; padding: 0 10px; min-width: 250px;">
+                <h3>Employee</h3>
+                <p><strong>Name:</strong> {{ employee.name }}</p>
+                <p><strong>Position:</strong> {{ employee.position }}</p>
+                <p><strong>Pay Type:</strong> {{ employee.pay_type }}</p>
+            </div>
+            
+            <div class="col" style="flex: 1; padding: 0 10px; min-width: 250px;">
+                <h3>Pay Period</h3>
+                <p><strong>Name:</strong> {{ pay_period.name }}</p>
+                <p><strong>Start Date:</strong> {{ format_date(pay_period.start_date) }}</p>
+                <p><strong>End Date:</strong> {{ format_date(pay_period.end_date) }}</p>
+            </div>
+            
+            <div class="col" style="flex: 1; padding: 0 10px; min-width: 250px;">
+                <h3>Totals</h3>
+                <p><strong>Regular Hours:</strong> <span id="regular-total">{{ totals.regular }}</span></p>
+                <p><strong>Overtime Hours:</strong> <span id="overtime-total">{{ totals.overtime }}</span></p>
+                <p id="save-indicator" style="color: green; display: none;">Saved</p>
+            </div>
+        </div>
+    </div>
+    
+    <hr>
+    
+    <div class="timesheet-container" data-period-id="{{ pay_period.id }}" data-employee-id="{{ employee.id }}">
+        <div style="margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3>Time Entries</h3>
+            </div>
+            <div style="font-size: 0.9rem; color: #666;">
+                Enter hours for each day. Changes are saved automatically.
+            </div>
+        </div>
+        
+        <div class="timesheet-grid">
+            {% for day in days %}
+            <div class="timesheet-day">
+                <div class="timesheet-date">{{ format_date(day.date) }}</div>
+                <div class="timesheet-day-name">{{ day.day }}</div>
+                
+                {% set entry = entries_dict.get(day.date) %}
+                
+                <div class="timesheet-hours">
+                    <div class="form-group">
+                        <label>Regular Hours</label>
+                        <input type="number" 
+                               class="form-control hours-input" 
+                               step="0.5" 
+                               min="0" 
+                               data-date="{{ day.date }}" 
+                               data-type="regular" 
+                               value="{{ entry.regular_hours if entry else 0 }}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Overtime Hours</label>
+                        <input type="number" 
+                               class="form-control hours-input" 
+                               step="0.5" 
+                               min="0" 
+                               data-date="{{ day.date }}" 
+                               data-type="overtime" 
+                               value="{{ entry.overtime_hours if entry else 0 }}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Job</label>
+                        <input type="text" 
+                               class="form-control job-input" 
+                               data-date="{{ day.date }}" 
+                               value="{{ entry.job_name if entry else '' }}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Notes</label>
+                        <textarea class="form-control notes-input" 
+                                  data-date="{{ day.date }}" 
+                                  rows="2">{{ entry.notes if entry else '' }}</textarea>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %} 

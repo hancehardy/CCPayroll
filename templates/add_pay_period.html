@@ -19,6 +19,11 @@
                         <label for="end_date" class="form-label">End Date</label>
                         <input type="date" class="form-control" id="end_date" name="end_date" required>
                     </div>
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Pay Period Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                        <div class="form-text">A descriptive name for this pay period. Will be auto-generated from date range if left empty.</div>
+                    </div>
                     <div class="d-flex justify-content-between">
                         <a href="{{ url_for('pay_periods') }}" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Back to Pay Periods
@@ -52,7 +57,36 @@
         // Format dates for input fields (YYYY-MM-DD)
         document.getElementById('start_date').value = startDate.toISOString().split('T')[0];
         document.getElementById('end_date').value = endDate.toISOString().split('T')[0];
+        
+        // Generate default name from date range
+        updatePayPeriodName();
+        
+        // Add event listeners to update name when dates change
+        document.getElementById('start_date').addEventListener('change', updatePayPeriodName);
+        document.getElementById('end_date').addEventListener('change', updatePayPeriodName);
     });
+    
+    function updatePayPeriodName() {
+        const startDateStr = document.getElementById('start_date').value;
+        const endDateStr = document.getElementById('end_date').value;
+        
+        if (startDateStr && endDateStr) {
+            // Format dates for display (MM/DD/YY)
+            const startDate = new Date(startDateStr);
+            const endDate = new Date(endDateStr);
+            
+            const startFormatted = (startDate.getMonth() + 1) + '/' + 
+                                   startDate.getDate() + '/' + 
+                                   startDate.getFullYear().toString().substr(-2);
+                                   
+            const endFormatted = (endDate.getMonth() + 1) + '/' + 
+                                 endDate.getDate() + '/' + 
+                                 endDate.getFullYear().toString().substr(-2);
+            
+            // Set the name field
+            document.getElementById('name').value = startFormatted + ' to ' + endFormatted;
+        }
+    }
 </script>
 {% endblock %}
 {% endblock %} 

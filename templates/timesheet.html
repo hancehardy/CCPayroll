@@ -24,15 +24,15 @@
                 
                 <h1 class="text-center mb-4">CREATIVE CLOSETS PAYROLL TIME SHEET</h1>
                 
-                {% for crew_num, crew_employees in crews %}
-                    {% if crew_num > 0 %}
+                <!-- INSTALL CREWS -->
+                {% for crew_num, crew_employees in install_crews %}
                         <div class="crew-section mb-5" data-crew="{{ crew_num }}">
                             <h3 class="bg-dark text-white p-2">INSTALL CREW # {{ crew_num }}</h3>
                             
                             {% for employee in crew_employees %}
                                 <div class="employee-timesheet mb-4" 
                                      data-employee="{{ employee.name }}" 
-                                     data-role="{{ employee.installer_role }}" 
+                                 data-role="{{ employee.position }}" 
                                      data-crew="{{ crew_num }}">
                                     <h4 class="bg-secondary text-white p-2">{{ employee.name }}</h4>
                                     
@@ -44,7 +44,7 @@
                                                     <th>DATE</th>
                                                     <th>PROJECT NAME</th>
                                                     <th>DAYS</th>
-                                                    {% if employee.installer_role != 'assistant' %}
+                                                {% if employee.position != 'assistant' %}
                                                     <th>INSTALL</th>
                                                     <th>ASST PAY</th>
                                                     {% endif %}
@@ -73,7 +73,7 @@
                                                                data-field="install_days"
                                                                value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].install_days }}{% endif %}">
                                                     </td>
-                                                    {% if employee.installer_role != 'assistant' %}
+                                                {% if employee.position != 'assistant' %}
                                                     <td>
                                                         <div class="input-group">
                                                             <span class="input-group-text">$</span>
@@ -121,79 +121,7 @@
                                                 </tr>
                                                 {% endfor %}
                                                 <tr>
-                                                    <td colspan="{% if employee.installer_role != 'assistant' %}6{% else %}4{% endif %}" class="text-end fw-bold">TOTAL</td>
-                                                    <td class="employee-hours-total"></td>
-                                                    <td class="employee-pay-total"></td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                {% endfor %}
-                
-                <!-- Non-crew employees -->
-                {% if 0 in dict(crews) and dict(crews)[0] %}
-                    <div class="non-crew-section mb-5">
-                        <h3 class="bg-dark text-white p-2">OTHER EMPLOYEES</h3>
-                        
-                        {% for employee in dict(crews)[0] %}
-                            <div class="employee-timesheet mb-4">
-                                <h4 class="bg-secondary text-white p-2">{{ employee.name }}</h4>
-                                
-                                <div class="table-responsive">
-                                    <table class="table table-bordered">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th>DAY</th>
-                                                <th>DATE</th>
-                                                <th>PROJECT NAME</th>
-                                                <th>HOURS</th>
-                                                <th>PAY</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for day in days %}
-                                            <tr>
-                                                <td>{{ day.day }}</td>
-                                                <td>{{ day.date }}</td>
-                                                <td>
-                                                    <input type="text" 
-                                                           class="form-control form-control-sm project-input" 
-                                                           data-employee="{{ employee.name }}" 
-                                                           data-day="{{ day.date }}" 
-                                                           data-field="project_name"
-                                                           value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].project_name }}{% endif %}">
-                                                </td>
-                                                <td>
-                                                    <input type="number" 
-                                                           class="form-control form-control-sm hours-input" 
-                                                           data-employee="{{ employee.name }}" 
-                                                           data-day="{{ day.date }}" 
-                                                           data-field="hours"
-                                                           step="0.5" 
-                                                           min="0" 
-                                                           value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].hours }}{% endif %}">
-                                                </td>
-                                                <td>
-                                                    <div class="input-group">
-                                                        <span class="input-group-text">$</span>
-                                                        <input type="number" 
-                                                               class="form-control form-control-sm pay-input" 
-                                                               data-employee="{{ employee.name }}" 
-                                                               data-day="{{ day.date }}" 
-                                                               data-field="pay"
-                                                               step="0.01" 
-                                                               min="0" 
-                                                               value="{% if employee.name in timesheet and day.date in timesheet[employee.name] %}{{ timesheet[employee.name][day.date].pay }}{% endif %}">
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                            <tr>
-                                                <td colspan="3" class="text-end fw-bold">TOTAL</td>
+                                                <td colspan="{% if employee.position != 'assistant' %}6{% else %}4{% endif %}" class="text-end fw-bold">TOTAL</td>
                                                 <td class="employee-hours-total"></td>
                                                 <td class="employee-pay-total"></td>
                                             </tr>
@@ -201,6 +129,73 @@
                                     </table>
                                 </div>
                             </div>
+                        {% endfor %}
+                    </div>
+                {% endfor %}
+                
+                <!-- PROJECT MANAGERS -->
+                {% if position_groups.project_managers %}
+                    <div class="position-section mb-5">
+                        <h3 class="bg-success text-white p-2">PROJECT MANAGERS</h3>
+                        
+                        {% for employee in position_groups.project_managers %}
+                            {% if employee.pay_type == 'salary' %}
+                                {% include 'partials/employee_timesheet_salary.html' %}
+                            {% else %}
+                                {% include 'partials/employee_timesheet_standard.html' %}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                
+                <!-- CEO -->
+                {% if position_groups.ceo %}
+                    <div class="position-section mb-5">
+                        <h3 class="bg-danger text-white p-2">EXECUTIVE</h3>
+                        
+                        {% for employee in position_groups.ceo %}
+                            {% if employee.pay_type == 'salary' %}
+                                {% include 'partials/employee_timesheet_salary.html' %}
+                            {% else %}
+                                {% include 'partials/employee_timesheet_standard.html' %}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                
+                <!-- ENGINEERS -->
+                {% if position_groups.engineers %}
+                    <div class="position-section mb-5">
+                        <h3 class="bg-warning text-dark p-2">ENGINEERS</h3>
+                        
+                        {% for employee in position_groups.engineers %}
+                            {% if employee.pay_type == 'salary' %}
+                                {% include 'partials/employee_timesheet_salary.html' %}
+                            {% else %}
+                                {% include 'partials/employee_timesheet_standard.html' %}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                
+                <!-- SALESMEN -->
+                {% if position_groups.salesmen %}
+                    <div class="position-section mb-5">
+                        <h3 class="bg-dark text-white p-2">SALES</h3>
+                        
+                        {% for employee in position_groups.salesmen %}
+                            {% include 'partials/employee_timesheet_standard.html' %}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                
+                <!-- OTHER EMPLOYEES -->
+                {% if position_groups.other %}
+                    <div class="position-section mb-5">
+                        <h3 class="bg-secondary text-white p-2">OTHER EMPLOYEES</h3>
+                        
+                        {% for employee in position_groups.other %}
+                            {% include 'partials/employee_timesheet_standard.html' %}
                         {% endfor %}
                     </div>
                 {% endif %}
@@ -213,6 +208,28 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Set default values for salaried employees
+        document.querySelectorAll('input[placeholder="Salaried"]').forEach(input => {
+            if (!input.value) {
+                input.value = "40"; // Default to 40 hours for salaried
+            }
+        });
+        
+        // For salaried employees with empty pay, set to salary / 52
+        document.querySelectorAll('.pay-input').forEach(input => {
+            const placeholder = input.getAttribute('placeholder');
+            if (placeholder && !input.value && parseFloat(placeholder) > 0) {
+                input.value = placeholder; // Use placeholder (salary/52) as value
+                
+                // Trigger change event to save to server
+                const changeEvent = new Event('change');
+                input.dispatchEvent(changeEvent);
+            }
+        });
+        
+        // Sync project name and days from lead installers to assistant installers
+        syncLeadToAssistants();
+        
         // Handle input changes
         const inputs = document.querySelectorAll('.hours-input, .pay-input, .project-input, .install-days-input, .install-input');
         inputs.forEach(input => {
@@ -248,34 +265,37 @@
                         
                         // If project name or install days were updated by a lead installer, update assistant installers
                         if ((field === 'project_name' || field === 'install_days') && isLeadInstaller(employee)) {
-                            copyToAssistantInstallers(employee, day, field, value);
-                        }
-                        
-                        // If the changed field is install or hours for a lead installer, or pay for an assistant installer, 
-                        // update the lead installer's pay value
-                        if ((field === 'install' || field === 'hours') && isLeadInstaller(employee)) {
-                            updateLeadInstallerPay(employee, day);
-                        } else if (field === 'pay' && !isLeadInstaller(employee)) {
-                            // If an assistant's pay changed, update the lead installer's pay in the same crew
-                            const assistantDiv = document.querySelector(`.employee-timesheet[data-employee="${employee}"]`);
-                            if (assistantDiv) {
-                                const crewNumber = assistantDiv.dataset.crew;
-                                if (crewNumber) {
-                                    // Find the lead installer in this crew
-                                    const leadInstaller = document.querySelector(`.employee-timesheet[data-crew="${crewNumber}"][data-role="lead"]`);
-                                    if (leadInstaller) {
-                                        const leadName = leadInstaller.dataset.employee;
-                                        updateLeadInstallerPay(leadName, day);
+                            // Get the crew number of this lead installer
+                            const leadElm = document.querySelector(`[data-employee="${employee}"]`);
+                            if (leadElm) {
+                                const crewNum = leadElm.dataset.crew;
+                                
+                                // Update all assistant installers in the same crew
+                                document.querySelectorAll(`[data-role="assistant"][data-crew="${crewNum}"]`).forEach(assistantElm => {
+                                    const assistantName = assistantElm.dataset.employee;
+                                    
+                                    // Update the corresponding field
+                                    const assistantInput = document.querySelector(`.${field}-input[data-employee="${assistantName}"][data-day="${day}"]`);
+                                    if (assistantInput) {
+                                        // Only update if the assistant doesn't have a value or if we're syncing the crew
+                                        if (!assistantInput.value || assistantInput.value !== value) {
+                                            assistantInput.value = value;
+                                            
+                                            // Save directly instead of triggering change event to avoid loops
+                                            saveTimesheet(assistantName, day, field, value);
+                                        }
                                     }
-                                }
+                                });
                             }
                         }
                         
-                        // Calculate totals
-                        calculateTotals();
+                        // If install amount was updated, calculate and display assistant pay
+                        if (field === 'install') {
+                            updateAssistantPay(day);
+                        }
                         
-                        // Update assistant pay display in lead installer sections
-                        updateAssistantPayDisplay();
+                        // Update totals
+                        calculateTotals();
                     }
                 })
                 .catch(error => {
@@ -284,224 +304,161 @@
             });
         });
         
-        // Function to check if an employee is a lead installer
-        function isLeadInstaller(employeeName) {
-            const employeeDiv = document.querySelector(`.employee-timesheet[data-employee="${employeeName}"]`);
-            return employeeDiv && employeeDiv.dataset.role === 'lead';
-        }
+        // Calculate initial totals
+        calculateTotals();
         
-        // Function to update lead installer pay based on conditions
-        function updateLeadInstallerPay(leadName, day) {
-            const leadDiv = document.querySelector(`.employee-timesheet[data-employee="${leadName}"]`);
-            if (!leadDiv || leadDiv.dataset.role !== 'lead') return;
+        // Initial update of assistant pay displays
+        updateAllAssistantPay();
+    });
+    
+    // Check if an employee is a lead installer
+    function isLeadInstaller(employeeName) {
+        const empElement = document.querySelector(`[data-employee="${employeeName}"]`);
+        return empElement && empElement.dataset.role === 'lead';
+    }
+    
+    // Sync project name and days from lead installers to assistant installers
+    function syncLeadToAssistants() {
+        // Find all crews
+        document.querySelectorAll('.crew-section').forEach(crewSection => {
+            const crewNum = crewSection.dataset.crew;
             
-            const crewNum = leadDiv.dataset.crew;
+            // Find lead installer in this crew
+            const leadElement = crewSection.querySelector('[data-role="lead"]');
+            if (!leadElement) return;
             
-            // Get the install value
-            const installInput = leadDiv.querySelector(`.install-input[data-day="${day}"]`);
-            // Get the hours value
-            const hoursInput = leadDiv.querySelector(`.hours-input[data-day="${day}"]`);
-            // Get the pay field to update
-            const payInput = leadDiv.querySelector(`.pay-input[data-day="${day}"]`);
+            const leadName = leadElement.dataset.employee;
             
-            if (!payInput) return;
+            // Find all assistant installers in this crew
+            const assistantElements = crewSection.querySelectorAll('[data-role="assistant"]');
             
-            // Get assistant pay for this day and crew
-            const assistantPayDisplay = leadDiv.querySelector(`.assistant-pay-display[data-day="${day}"]`);
-            let assistantPayValue = 0;
-            
-            if (assistantPayDisplay) {
-                // Parse the assistant pay value (remove $ sign and convert to number)
-                const assistantPayText = assistantPayDisplay.textContent.replace('$', '');
-                assistantPayValue = parseFloat(assistantPayText) || 0;
-            }
-            
-            let newPayValue = 0;
-            let installComponent = 0;
-            
-            // Component 1: If install field has a value, add (install - assistant pay)
-            if (installInput && installInput.value) {
-                const installValue = parseFloat(installInput.value) || 0;
-                installComponent = Math.max(0, installValue - assistantPayValue);
-                newPayValue += installComponent;
-            }
-            
-            // Component 2: If hours field has a value, we need to get the hourly rate calculation from server
-            if (hoursInput && hoursInput.value && parseFloat(hoursInput.value) > 0) {
-                // We'll make a special request to calculate the hourly pay component
-                fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        employee: leadName,
-                        day: day,
-                        field: 'hours',
-                        value: hoursInput.value,
-                        calculate_only: true // Flag to indicate we only want the calculation
-                    }),
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success && data.pay) {
-                        // Add the hourly component to the install component
-                        const hourlyComponent = parseFloat(data.pay);
-                        const totalPay = installComponent + hourlyComponent;
-                        
-                        // Update the pay field
-                        payInput.value = totalPay.toFixed(2);
-                        
-                        // Send the final total update to server
-                        updatePayValueOnServer(leadName, day, totalPay.toFixed(2));
-                    }
-                })
-                .catch(error => {
-                    console.error('Error calculating hourly pay:', error);
-                });
-            } else {
-                // No hours component, just update with the install component
-                payInput.value = newPayValue.toFixed(2);
+            // For each day, copy project name and days from lead to assistants
+            document.querySelectorAll('[data-date]').forEach(dayRow => {
+                const day = dayRow.dataset.date;
                 
-                // Send update to server
-                updatePayValueOnServer(leadName, day, newPayValue.toFixed(2));
-            }
-        }
-        
-        // Helper function to update pay value on server
-        function updatePayValueOnServer(employeeName, day, payValue) {
+                // Get project name and days from lead installer
+                const projectInput = document.querySelector(`.project-input[data-employee="${leadName}"][data-day="${day}"]`);
+                const daysInput = document.querySelector(`.install-days-input[data-employee="${leadName}"][data-day="${day}"]`);
+                
+                if (projectInput && projectInput.value) {
+                    // Copy to all assistants
+                    assistantElements.forEach(assistantElem => {
+                        const assistantName = assistantElem.dataset.employee;
+                        
+                        // Copy project name
+                        const assistantProjectInput = document.querySelector(`.project-input[data-employee="${assistantName}"][data-day="${day}"]`);
+                        if (assistantProjectInput && !assistantProjectInput.value) {
+                            assistantProjectInput.value = projectInput.value;
+                            
+                            // Save the value to the server
+                            saveTimesheet(assistantName, day, 'project_name', projectInput.value);
+                        }
+                    });
+                }
+                
+                if (daysInput && daysInput.value) {
+                    // Copy to all assistants
+                    assistantElements.forEach(assistantElem => {
+                        const assistantName = assistantElem.dataset.employee;
+                        
+                        // Copy days
+                        const assistantDaysInput = document.querySelector(`.install-days-input[data-employee="${assistantName}"][data-day="${day}"]`);
+                        if (assistantDaysInput && !assistantDaysInput.value) {
+                            assistantDaysInput.value = daysInput.value;
+                            
+                            // Save the value to the server
+                            saveTimesheet(assistantName, day, 'install_days', daysInput.value);
+                        }
+                    });
+                }
+            });
+        });
+    }
+    
+    // Helper function to save timesheet data to the server
+    function saveTimesheet(employee, day, field, value) {
             fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    employee: employeeName,
+                employee: employee,
                     day: day,
-                    field: 'pay',
-                    value: payValue
-                }),
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Update totals after pay is updated
-                if (data.success) {
-                    calculateTotals();
+                field: field,
+                value: value
+            }),
+        }).catch(error => {
+            console.error('Error updating timesheet:', error);
+        });
+    }
+    
+    // Update assistant pay for a specific day
+    function updateAssistantPay(day) {
+        // Process each crew
+        document.querySelectorAll('[data-crew]').forEach(crewElm => {
+            if (crewElm.classList.contains('crew-section')) {
+                const crewNum = crewElm.dataset.crew;
+                
+                // Find the lead installer's install amount for this day
+                let leadInstallAmount = 0;
+                const leadInstallInput = crewElm.querySelector(`[data-role="lead"] .install-input[data-day="${day}"]`);
+                
+                if (leadInstallInput && leadInstallInput.value) {
+                    leadInstallAmount = parseFloat(leadInstallInput.value);
                 }
-            })
-            .catch(error => {
-                console.error('Error updating pay:', error);
-            });
-        }
-        
-        // Function to copy project name or install days from lead installer to assistant installers
-        function copyToAssistantInstallers(leadEmployeeName, day, field, value) {
-            const leadEmployeeDiv = document.querySelector(`.employee-timesheet[data-employee="${leadEmployeeName}"]`);
-            if (!leadEmployeeDiv) return;
-            
-            const crewNumber = leadEmployeeDiv.dataset.crew;
-            if (!crewNumber) return;
-            
-            // Find all assistant installers in the same crew
-            const assistantInstallers = document.querySelectorAll(`.employee-timesheet[data-crew="${crewNumber}"][data-role="assistant"]`);
-            
-            assistantInstallers.forEach(assistantDiv => {
-                const assistantName = assistantDiv.dataset.employee;
-                const assistantInput = assistantDiv.querySelector(`[data-field="${field}"][data-day="${day}"]`);
                 
-                if (assistantInput) {
-                    // Update the input value
-                    assistantInput.value = value;
-                    
-                    // Trigger the change event to save to server
-                    const changeEvent = new Event('change', { bubbles: true });
-                    assistantInput.dispatchEvent(changeEvent);
-                }
-            });
-        }
-        
-        // Function to update assistant pay display in lead installer sections
-        function updateAssistantPayDisplay() {
-            // For each crew
-            const crews = document.querySelectorAll('.crew-section');
-            crews.forEach(crew => {
-                const crewNum = crew.dataset.crew;
+                // Calculate assistant pay (20% of lead install amount)
+                const assistantPay = leadInstallAmount * 0.2;
                 
-                // For each day in the timesheet
-                const allDays = crew.querySelectorAll('[data-date]');
-                const uniqueDays = new Set();
-                allDays.forEach(day => uniqueDays.add(day.dataset.date));
-                
-                uniqueDays.forEach(dayDate => {
-                    // Find all assistant installers in this crew
-                    const assistantInstallers = crew.querySelectorAll(`.employee-timesheet[data-role="assistant"]`);
-                    let totalAssistantPay = 0;
-                    
-                    // Sum up the pay for all assistant installers for this day
-                    assistantInstallers.forEach(assistant => {
-                        const payInput = assistant.querySelector(`.pay-input[data-day="${dayDate}"]`);
-                        if (payInput && payInput.value) {
-                            totalAssistantPay += parseFloat(payInput.value);
-                        }
-                    });
-                    
-                    // Update the assistant pay display in lead installer row
-                    const assistantPayDisplays = crew.querySelectorAll(`.assistant-pay-display[data-day="${dayDate}"]`);
-                    assistantPayDisplays.forEach(display => {
-                        display.textContent = '$' + totalAssistantPay.toFixed(2);
-                    });
-                    
-                    // After updating assistant pay display, also update lead installer pay
-                    const leadInstaller = crew.querySelector(`.employee-timesheet[data-role="lead"]`);
-                    if (leadInstaller) {
-                        const leadName = leadInstaller.dataset.employee;
-                        updateLeadInstallerPay(leadName, dayDate);
-                    }
+                // Update all assistant pay displays for this crew and day
+                crewElm.querySelectorAll(`.assistant-pay-display[data-crew="${crewNum}"][data-day="${day}"]`).forEach(display => {
+                    display.textContent = `$${assistantPay.toFixed(2)}`;
                 });
-            });
-        }
-        
-        // Calculate totals on page load
-        calculateTotals();
-        
-        // Update assistant pay display on page load
-        updateAssistantPayDisplay();
-        
-        // Function to calculate totals for each employee
+            }
+        });
+    }
+    
+    // Update all assistant pay displays
+    function updateAllAssistantPay() {
+        document.querySelectorAll('[data-date]').forEach(dayRow => {
+            const day = dayRow.dataset.date;
+            updateAssistantPay(day);
+        });
+    }
+    
+    // Calculate totals for each employee
         function calculateTotals() {
-            const employeeTables = document.querySelectorAll('.employee-timesheet');
-            
-            employeeTables.forEach(table => {
-                const hoursInputs = table.querySelectorAll('.hours-input');
-                const payInputs = table.querySelectorAll('.pay-input');
-                
+        document.querySelectorAll('.employee-timesheet').forEach(employeeSection => {
                 let totalHours = 0;
                 let totalPay = 0;
                 
-                hoursInputs.forEach(input => {
-                    if (input.value) {
-                        totalHours += parseFloat(input.value);
-                    }
-                });
-                
-                payInputs.forEach(input => {
-                    if (input.value) {
-                        totalPay += parseFloat(input.value);
-                    }
-                });
-                
-                const hoursTotal = table.querySelector('.employee-hours-total');
-                const payTotal = table.querySelector('.employee-pay-total');
+            // Get all hours inputs for this employee
+            employeeSection.querySelectorAll('.hours-input').forEach(hoursInput => {
+                if (hoursInput.value) {
+                    totalHours += parseFloat(hoursInput.value);
+                }
+            });
+            
+            // Get all pay inputs for this employee
+            employeeSection.querySelectorAll('.pay-input').forEach(payInput => {
+                if (payInput.value) {
+                    totalPay += parseFloat(payInput.value);
+                }
+            });
+            
+            // Update total displays
+            const hoursTotal = employeeSection.querySelector('.employee-hours-total');
+            const payTotal = employeeSection.querySelector('.employee-pay-total');
                 
                 if (hoursTotal) {
                     hoursTotal.textContent = totalHours.toFixed(1);
                 }
                 
                 if (payTotal) {
-                    payTotal.textContent = '$' + totalPay.toFixed(2);
+                payTotal.textContent = `$${totalPay.toFixed(2)}`;
                 }
             });
         }
-    });
 </script>
 {% endblock %} 

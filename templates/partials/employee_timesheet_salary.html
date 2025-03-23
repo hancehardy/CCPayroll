@@ -1,0 +1,68 @@
+<div class="employee-timesheet mb-4" data-employee="{{ employee.name }}">
+    <h4 class="bg-secondary text-white p-2">{{ employee.name }} {% if employee.salary %}(Salary: ${{ employee.salary }}/year){% endif %}</h4>
+    
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead class="table-light">
+                <tr>
+                    <th>Period</th>
+                    <th>Pay Type</th>
+                    <th>PROJECT NAME</th>
+                    <th>HOURS</th>
+                    <th>PAY</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>{{ period.name }}</td>
+                    <td>
+                        <span class="badge bg-info">Salary</span>
+                    </td>
+                    <td>
+                        <input type="text" 
+                               class="form-control form-control-sm project-input" 
+                               data-employee="{{ employee.name }}" 
+                               data-day="{{ days[0].date }}" 
+                               data-field="project_name"
+                               value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].project_name }}{% endif %}">
+                    </td>
+                    <td>
+                        <input type="number" 
+                               class="form-control form-control-sm hours-input" 
+                               data-employee="{{ employee.name }}" 
+                               data-day="{{ days[0].date }}" 
+                               data-field="hours"
+                               step="0.5" 
+                               min="0"
+                               {% if employee.salary %}
+                               placeholder="Salaried"
+                               readonly
+                               {% endif %}
+                               value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].hours }}{% endif %}">
+                    </td>
+                    <td>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" 
+                                   class="form-control form-control-sm pay-input" 
+                                   data-employee="{{ employee.name }}" 
+                                   data-day="{{ days[0].date }}" 
+                                   data-field="pay"
+                                   step="0.01" 
+                                   min="0" 
+                                   {% if employee.salary %}
+                                   placeholder="{% if employee.salary %}{{ (employee.salary|float / 52)|round(2) }}{% endif %}"
+                                   {% endif %}
+                                   value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].pay }}{% else %}{% if employee.salary %}{{ (employee.salary|float / 52)|round(2) }}{% endif %}{% endif %}">
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="3" class="text-end fw-bold">TOTAL</td>
+                    <td class="employee-hours-total"></td>
+                    <td class="employee-pay-total"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div> 
