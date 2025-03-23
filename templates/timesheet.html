@@ -215,15 +215,30 @@
             }
         });
         
-        // For salaried employees with empty pay, set to salary / 52
+        // For salaried employees, ensure the weekly salary is properly saved to the database
         document.querySelectorAll('.pay-input').forEach(input => {
-            const placeholder = input.getAttribute('placeholder');
-            if (placeholder && !input.value && parseFloat(placeholder) > 0) {
-                input.value = placeholder; // Use placeholder (salary/52) as value
-                
-                // Trigger change event to save to server
-                const changeEvent = new Event('change');
-                input.dispatchEvent(changeEvent);
+            const employee = input.dataset.employee;
+            const day = input.dataset.day;
+            const value = input.value;
+            
+            // If this input has a value and belongs to a salaried employee (we can identify by checking for salary in parent elements)
+            const employeeSection = input.closest('.employee-timesheet');
+            const isSalariedEmployee = employeeSection && employeeSection.querySelector('h4')?.textContent.includes('Salary:');
+            
+            if (isSalariedEmployee && value) {
+                // Save this value to ensure it's properly stored in the database
+                fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        employee: employee,
+                        day: day,
+                        field: 'pay',
+                        value: value
+                    }),
+                });
             }
         });
         

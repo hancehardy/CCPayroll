@@ -50,9 +50,6 @@
                                    data-field="pay"
                                    step="0.01" 
                                    min="0" 
-                                   {% if employee.salary %}
-                                   placeholder="{% if employee.salary %}{{ (employee.salary|float / 52)|round(2) }}{% endif %}"
-                                   {% endif %}
                                    value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].pay }}{% else %}{% if employee.salary %}{{ (employee.salary|float / 52)|round(2) }}{% endif %}{% endif %}">
                         </div>
                     </td>
