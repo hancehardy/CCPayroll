@@ -497,13 +497,27 @@ def edit_employee(employee_id):
 
 @app.route('/employees/delete/<employee_id>', methods=['POST'])
 def delete_employee(employee_id):
-    # Get employees and remove the one with matching ID
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM employees WHERE id = %s', (employee_id,))
-        conn.commit()
+    """Delete an employee with the specified ID"""
+    app.logger.info(f"Attempting to delete employee with ID: {employee_id}")
     
-    flash('Employee deleted successfully', 'success')
+    try:
+        # Get employees and remove the one with matching ID
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM employees WHERE id = %s', (employee_id,))
+            affected_rows = cursor.rowcount
+            conn.commit()
+            
+        if affected_rows > 0:
+            app.logger.info(f"Successfully deleted employee with ID: {employee_id}")
+            flash('Employee deleted successfully', 'success')
+        else:
+            app.logger.warning(f"No employee found with ID: {employee_id}")
+            flash('No employee found with that ID', 'warning')
+    except Exception as e:
+        app.logger.error(f"Error deleting employee: {str(e)}")
+        flash(f'Error deleting employee: {str(e)}', 'danger')
+    
     return redirect(url_for('employees'))
 
 @app.route('/pay-periods')
@@ -1241,5 +1255,21 @@ if __name__ == '__main__':
         migrate_database()
         # Initialize sample data if needed
         initialize_sample_data()
+        
+        # Ensure at least one employee exists for testing
+        employees = get_employees()
+        if not employees:
+            app.logger.info("No employees found. Creating a test employee.")
+            test_employee = {
+                'id': str(uuid.uuid4()),
+                'name': 'Test Employee',
+                'pay_type': 'hourly',
+                'rate': '20',
+                'salary': None,
+                'commission_rate': None,
+                'install_crew': 1,
+                'position': 'lead'
+            }
+            save_employee(test_employee)
     
     app.run(debug=True, port=5001) 
