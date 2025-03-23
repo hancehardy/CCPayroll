@@ -75,10 +75,28 @@ def save_pay_period(period_data):
     """Save a pay period to the database"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            'INSERT OR REPLACE INTO pay_periods (id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
-            (period_data['id'], period_data['name'], period_data['start_date'], period_data['end_date'])
-        )
+        
+        # Check if PostgreSQL connection
+        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+            # PostgreSQL syntax
+            cursor.execute(
+                '''
+                INSERT INTO pay_periods (id, name, start_date, end_date) 
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    start_date = EXCLUDED.start_date,
+                    end_date = EXCLUDED.end_date
+                ''',
+                (period_data['id'], period_data['name'], period_data['start_date'], period_data['end_date'])
+            )
+        else:
+            # SQLite syntax
+            cursor.execute(
+                'INSERT OR REPLACE INTO pay_periods (id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
+                (period_data['id'], period_data['name'], period_data['start_date'], period_data['end_date'])
+            )
+        
         conn.commit()
 
 def get_employees():
@@ -93,24 +111,57 @@ def save_employee(employee_data):
     """Save an employee to the database"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            '''
-            INSERT OR REPLACE INTO employees (
-                id, name, rate, install_crew, position, 
-                pay_type, salary, commission_rate
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''',
-            (
-                employee_data['id'], 
-                employee_data['name'], 
-                employee_data.get('rate'), 
-                employee_data['install_crew'], 
-                employee_data['position'],
-                employee_data.get('pay_type', 'hourly'),
-                employee_data.get('salary'),
-                employee_data.get('commission_rate')
+        
+        # Check if PostgreSQL connection
+        if hasattr(conn, '_con') and conn._con.__class__.__module__.startswith('psycopg2'):
+            # PostgreSQL syntax
+            cursor.execute(
+                '''
+                INSERT INTO employees (
+                    id, name, rate, install_crew, position, 
+                    pay_type, salary, commission_rate
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    rate = EXCLUDED.rate,
+                    install_crew = EXCLUDED.install_crew,
+                    position = EXCLUDED.position,
+                    pay_type = EXCLUDED.pay_type,
+                    salary = EXCLUDED.salary,
+                    commission_rate = EXCLUDED.commission_rate
+                ''',
+                (
+                    employee_data['id'], 
+                    employee_data['name'], 
+                    employee_data.get('rate'), 
+                    employee_data['install_crew'], 
+                    employee_data['position'],
+                    employee_data.get('pay_type', 'hourly'),
+                    employee_data.get('salary'),
+                    employee_data.get('commission_rate')
+                )
             )
-        )
+        else:
+            # SQLite syntax
+            cursor.execute(
+                '''
+                INSERT OR REPLACE INTO employees (
+                    id, name, rate, install_crew, position, 
+                    pay_type, salary, commission_rate
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    employee_data['id'], 
+                    employee_data['name'], 
+                    employee_data.get('rate'), 
+                    employee_data['install_crew'], 
+                    employee_data['position'],
+                    employee_data.get('pay_type', 'hourly'),
+                    employee_data.get('salary'),
+                    employee_data.get('commission_rate')
+                )
+            )
+        
         conn.commit()
 
 def get_timesheet(period_id):
