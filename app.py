@@ -146,13 +146,24 @@ def get_employees():
         employees = []
         for row in rows:
             employee = row_to_dict(row)
+            # Skip employees with no ID or name
+            if (not employee.get('id') and not employee.get('name')):
+                app.logger.warning(f"Skipping invalid employee record: {employee}")
+                continue
+                
             # Ensure each employee has an id field
-            if 'id' not in employee and hasattr(row, 'id'):
-                employee['id'] = row.id
-            elif 'id' not in employee and isinstance(row, (list, tuple)) and len(row) > 0:
-                employee['id'] = row[0]  # Assume first column is id
-            elif 'id' not in employee:
-                employee['id'] = str(uuid.uuid4())  # Last resort: generate a new id
+            if 'id' not in employee or not employee['id']:
+                if hasattr(row, 'id'):
+                    employee['id'] = row.id
+                elif isinstance(row, (list, tuple)) and len(row) > 0:
+                    employee['id'] = row[0]  # Assume first column is id
+                else:
+                    employee['id'] = str(uuid.uuid4())  # Last resort: generate a new id
+                    
+            # Ensure name is not None
+            if 'name' not in employee or not employee['name']:
+                employee['name'] = 'Unknown Employee'
+                
             employees.append(employee)
         return employees
 
