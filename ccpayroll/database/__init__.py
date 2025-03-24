@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import threading
 import os
+import re
 from contextlib import contextmanager
 from datetime import datetime
 from dotenv import load_dotenv
@@ -24,27 +25,40 @@ def get_db():
     thread_id = threading.get_ident()
     
     if not hasattr(db_local, 'connection'):
-        # PostgreSQL connection parameters
-        host = os.environ.get('PG_HOST', 'localhost')
-        port = os.environ.get('PG_PORT', '5432')
-        user = os.environ.get('PG_USER', 'postgres')
-        password = os.environ.get('PG_PASSWORD', 'postgres')
-        db_name = os.environ.get('PG_DB', 'ccpayroll')
+        # Check for Heroku DATABASE_URL first
+        database_url = os.environ.get('DATABASE_URL')
         
-        # Connect to PostgreSQL
-        db_local.connection = psycopg2.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            dbname=db_name,
-            cursor_factory=RealDictCursor
-        )
+        if database_url:
+            # Handle Heroku's postgres:// vs postgresql:// in the connection URL
+            if database_url.startswith('postgres://'):
+                database_url = database_url.replace('postgres://', 'postgresql://', 1)
+            
+            # Connect using the DATABASE_URL
+            db_local.connection = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+            current_app.logger.info(f"Connected to Heroku PostgreSQL database for thread {thread_id}")
+        else:
+            # Use local configuration
+            host = os.environ.get('PG_HOST', 'localhost')
+            port = os.environ.get('PG_PORT', '5432')
+            user = os.environ.get('PG_USER', 'postgres')
+            password = os.environ.get('PG_PASSWORD', 'postgres')
+            db_name = os.environ.get('PG_DB', 'ccpayroll')
+            
+            # Connect to PostgreSQL
+            db_local.connection = psycopg2.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=password,
+                dbname=db_name,
+                cursor_factory=RealDictCursor
+            )
+            current_app.logger.info(f"Connected to local PostgreSQL database for thread {thread_id}")
+        
         db_connections[thread_id] = {
             'created_at': datetime.now(),
             'last_used': datetime.now()
         }
-        current_app.logger.info(f"New DB connection created for thread {thread_id}")
     else:
         # Update last used time
         if thread_id in db_connections:
