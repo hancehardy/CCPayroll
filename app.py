@@ -58,10 +58,12 @@ def cleanup_sqlite():
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT COUNT(*) FROM pay_periods')
-            pay_periods_count = cursor.fetchone()['count']
+            result = cursor.fetchone()
+            pay_periods_count = result['count'] if isinstance(result, dict) else result[0]
             
             cursor.execute('SELECT COUNT(*) FROM employees')
-            employees_count = cursor.fetchone()['count']
+            result = cursor.fetchone()
+            employees_count = result['count'] if isinstance(result, dict) else result[0]
             
             # If we have data in PostgreSQL, we can delete the SQLite file
             if pay_periods_count > 0 or employees_count > 0:
@@ -1141,10 +1143,12 @@ def migrate_json_to_db():
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM pay_periods')
-        pay_periods_count = cursor.fetchone()[0]
+        result = cursor.fetchone()
+        pay_periods_count = result['count'] if isinstance(result, dict) else result[0]
         
         cursor.execute('SELECT COUNT(*) FROM employees')
-        employees_count = cursor.fetchone()[0]
+        result = cursor.fetchone()
+        employees_count = result['count'] if isinstance(result, dict) else result[0]
         
         # If we already have data, skip migration
         if pay_periods_count > 0 or employees_count > 0:
