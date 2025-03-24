@@ -84,36 +84,52 @@ def get_pay_periods():
 
 def save_employee(employee_data):
     """Save an employee to the database"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        
-        # Generate ID if it doesn't exist
-        if 'id' not in employee_data or not employee_data['id']:
-            employee_data['id'] = str(uuid.uuid4())
-        
-        # Set default values if they don't exist
-        employee_data.setdefault('rate', None)
-        employee_data.setdefault('install_crew', 0)
-        employee_data.setdefault('position', None)
-        employee_data.setdefault('pay_type', 'hourly')
-        employee_data.setdefault('salary', None)
-        employee_data.setdefault('commission_rate', None)
-        
-        cursor.execute(
-            'INSERT INTO employees (id, name, rate, install_crew, position, pay_type, salary, commission_rate) '
-            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s) '
-            'ON CONFLICT (id) DO UPDATE SET '
-            'name = %s, rate = %s, install_crew = %s, position = %s, pay_type = %s, salary = %s, commission_rate = %s',
-            (
-                employee_data['id'], employee_data['name'], employee_data['rate'], 
-                employee_data['install_crew'], employee_data['position'], 
-                employee_data['pay_type'], employee_data['salary'], employee_data['commission_rate'],
-                employee_data['name'], employee_data['rate'], 
-                employee_data['install_crew'], employee_data['position'], 
-                employee_data['pay_type'], employee_data['salary'], employee_data['commission_rate']
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Generate ID if it doesn't exist
+            if 'id' not in employee_data or not employee_data['id']:
+                employee_data['id'] = str(uuid.uuid4())
+            
+            # Set default values if they don't exist
+            employee_data.setdefault('rate', None)
+            employee_data.setdefault('install_crew', 0)
+            employee_data.setdefault('position', None)
+            employee_data.setdefault('pay_type', 'hourly')
+            employee_data.setdefault('salary', None)
+            employee_data.setdefault('commission_rate', None)
+            
+            # Check if employee already exists with this name
+            cursor.execute('SELECT id FROM employees WHERE name = %s', (employee_data['name'],))
+            existing = cursor.fetchone()
+            
+            if existing:
+                # If employee exists, update with ID from database
+                if isinstance(existing, dict):
+                    employee_data['id'] = existing['id']
+                else:
+                    employee_data['id'] = existing[0]
+            
+            cursor.execute(
+                'INSERT INTO employees (id, name, rate, install_crew, position, pay_type, salary, commission_rate) '
+                'VALUES (%s, %s, %s, %s, %s, %s, %s, %s) '
+                'ON CONFLICT (id) DO UPDATE SET '
+                'name = %s, rate = %s, install_crew = %s, position = %s, pay_type = %s, salary = %s, commission_rate = %s',
+                (
+                    employee_data['id'], employee_data['name'], employee_data['rate'], 
+                    employee_data['install_crew'], employee_data['position'], 
+                    employee_data['pay_type'], employee_data['salary'], employee_data['commission_rate'],
+                    employee_data['name'], employee_data['rate'], 
+                    employee_data['install_crew'], employee_data['position'], 
+                    employee_data['pay_type'], employee_data['salary'], employee_data['commission_rate']
+                )
             )
-        )
-        conn.commit()
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error saving employee {employee_data.get('name', 'unknown')}: {str(e)}")
+        return False
 
 def get_employees():
     with get_db() as conn:
@@ -1131,9 +1147,26 @@ def init_sample_data():
                     'position': 'salesman'
                 }
             ]
-            # Save each employee individually
+            
+            # Get existing employee names
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT name FROM employees')
+                existing_names = set()
+                for row in cursor.fetchall():
+                    if isinstance(row, dict):
+                        existing_names.add(row['name'])
+                    else:
+                        existing_names.add(row[0])
+            
+            # Save each employee individually if they don't already exist
             for employee in sample_employees:
-                save_employee(employee)
+                if employee['name'] not in existing_names:
+                    try:
+                        save_employee(employee)
+                    except Exception as e:
+                        logger.error(f"Error saving employee {employee['name']}: {str(e)}")
+            
             logger.info("Initialized database with sample employees")
 
 # Initialize database and migrate data from JSON if needed
