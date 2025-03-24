@@ -333,11 +333,22 @@ def add_employee():
     if request.method == 'POST':
         name = request.form.get('name')
         pay_type = request.form.get('pay_type', 'hourly')
+        position = request.form.get('position', 'none')
+        
+        # Set pay_type to 'commission' if position is 'salesman' to ensure consistency
+        if position == 'salesman':
+            pay_type = 'commission'
+            
+        # Handle rate based on pay_type
         rate = request.form.get('rate') if pay_type == 'hourly' else None
         salary = request.form.get('salary') if pay_type == 'salary' else None
-        commission_rate = request.form.get('commission_rate') if pay_type == 'commission' else None
+        commission_rate = request.form.get('commission_rate')
+        
+        # Ensure commission_rate is properly set for salesmen
+        if pay_type == 'commission' and not commission_rate:
+            commission_rate = '10'  # Default to 10% if not specified
+            
         install_crew = request.form.get('install_crew', '0')
-        position = request.form.get('position', 'none')
         
         # Convert install_crew to integer
         try:
@@ -391,11 +402,22 @@ def edit_employee(employee_id):
     if request.method == 'POST':
         name = request.form.get('name')
         pay_type = request.form.get('pay_type', 'hourly')
+        position = request.form.get('position', 'none')
+        
+        # Set pay_type to 'commission' if position is 'salesman' to ensure consistency
+        if position == 'salesman':
+            pay_type = 'commission'
+            
+        # Handle rate based on pay_type
         rate = request.form.get('rate') if pay_type == 'hourly' else None
         salary = request.form.get('salary') if pay_type == 'salary' else None
-        commission_rate = request.form.get('commission_rate') if pay_type == 'commission' else None
+        commission_rate = request.form.get('commission_rate')
+        
+        # Ensure commission_rate is properly set for salesmen
+        if pay_type == 'commission' and not commission_rate:
+            commission_rate = '10'  # Default to 10% if not specified
+            
         install_crew = request.form.get('install_crew', '0')
-        position = request.form.get('position', 'none')
         
         # Convert install_crew to integer
         try:

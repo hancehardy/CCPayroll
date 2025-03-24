@@ -88,6 +88,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const hourlyPayDiv = document.querySelector('.hourly-pay');
     const salaryPayDiv = document.querySelector('.salary-pay');
     const commissionPayDiv = document.querySelector('.commission-pay');
+    const positionSelect = document.getElementById('position');
     
     // Function to show/hide pay fields based on selected pay type
     function togglePayFields() {
@@ -98,11 +99,24 @@ document.addEventListener('DOMContentLoaded', function() {
         commissionPayDiv.style.display = selectedPayType === 'commission' ? 'block' : 'none';
     }
     
+    // Function to set pay type based on position
+    function setPayTypeBasedOnPosition() {
+        const selectedPosition = positionSelect.value;
+        
+        if (selectedPosition === 'salesman') {
+            payTypeSelect.value = 'commission';
+            togglePayFields();
+        }
+    }
+    
     // Initial toggle based on default selection
     togglePayFields();
     
     // Listen for changes to pay type
     payTypeSelect.addEventListener('change', togglePayFields);
+    
+    // Listen for changes to position
+    positionSelect.addEventListener('change', setPayTypeBasedOnPosition);
 });
 </script>
 {% endblock %} 
