@@ -24,14 +24,18 @@
                                     <tr>
                                         <th>Employee</th>
                                         <th>Total Pay</th>
+                                        <th>Reimbursements</th>
+                                        <th>Total</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% for employee, pay in report.employee_total_pay.items()|sort(attribute='1', reverse=true) %}
-                                    {% if pay > 0 %}
+                                    {% if pay > 0 or report.employee_reimbursements[employee] > 0 %}
                                     <tr>
                                         <td>{{ employee }}</td>
                                         <td>${{ "%.2f"|format(pay) }}</td>
+                                        <td>${{ "%.2f"|format(report.employee_reimbursements[employee]) }}</td>
+                                        <td>${{ "%.2f"|format(pay + report.employee_reimbursements[employee]) }}</td>
                                     </tr>
                                     {% endif %}
                                     {% endfor %}
@@ -76,21 +80,27 @@
                                             <tr>
                                                 <th>Employee</th>
                                                 <th>Pay</th>
+                                                <th>Reimbursement</th>
+                                                <th>Total</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {% for employee in report.active_employees %}
                                             {% set period_data = report.employee_pay_by_period[employee]|selectattr('period', 'equalto', period)|first %}
-                                            {% if period_data and period_data.pay > 0 %}
+                                            {% if period_data and (period_data.pay > 0 or period_data.reimbursement > 0) %}
                                             <tr>
                                                 <td>{{ employee }}</td>
                                                 <td>${{ "%.2f"|format(period_data.pay) }}</td>
+                                                <td>${{ "%.2f"|format(period_data.reimbursement) }}</td>
+                                                <td>${{ "%.2f"|format(period_data.pay + period_data.reimbursement) }}</td>
                                             </tr>
                                             {% endif %}
                                             {% endfor %}
                                             <tr class="table-secondary">
                                                 <th>Total</th>
                                                 <th>${{ "%.2f"|format(report.period_totals[period].total) }}</th>
+                                                <th>${{ "%.2f"|format(report.period_totals[period].reimbursement_total) }}</th>
+                                                <th>${{ "%.2f"|format(report.period_totals[period].total + report.period_totals[period].reimbursement_total) }}</th>
                                             </tr>
                                         </tbody>
                                     </table>

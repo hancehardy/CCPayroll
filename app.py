@@ -23,6 +23,11 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'creative_closets_payroll_app')
 
+# Add context processor for current year
+@app.context_processor
+def inject_now():
+    return {'now': datetime.now()}
+
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
@@ -152,6 +157,11 @@ def get_timesheet(period_id):
             (period_id,)
         )
         entries = cursor.fetchall()
+
+        # Debug - log all entries with reimbursement values
+        for entry in entries:
+            if entry.get('reimbursement'):
+                print(f"DEBUG: Found reimbursement value {entry['reimbursement']} for {entry['employee_name']} on day {entry['day']}")
     
     # Get pay period details
     with get_db() as conn:
@@ -184,10 +194,11 @@ def get_timesheet(period_id):
                 'regular_hours': 0,
                 'overtime_hours': 0,
                 'job_name': '',
-                'notes': ''
+                'notes': '',
+                'reimbursement': ''
             }
     
-    # Fill in timesheet entries
+    # Fill in timesheet entries from database
     for entry in entries:
         employee_name = entry['employee_name']
         day = entry['day']
@@ -195,9 +206,51 @@ def get_timesheet(period_id):
         if employee_name in timesheet and day in timesheet[employee_name]:
             # Fill in all fields from the entry
             for field in ['hours', 'pay', 'project_name', 'install_days', 'install', 
-                         'regular_hours', 'overtime_hours', 'job_name', 'notes']:
-                if entry[field] is not None:
+                         'regular_hours', 'overtime_hours', 'job_name', 'notes', 'reimbursement']:
+                # Check if the field exists in the entry dictionary
+                if field in entry and entry[field] is not None:
                     timesheet[employee_name][day][field] = entry[field]
+    
+    # Process reimbursements - this is critical for persistence
+    print(f"DEBUG: Processing reimbursements for timesheet {period_id}")
+    
+    # Create a separate dictionary to store reimbursement values by employee
+    employee_reimbursements = {}
+    
+    # First scan the database entries directly for any reimbursement values
+    for entry in entries:
+        employee_name = entry['employee_name']
+        if entry.get('reimbursement') and entry['reimbursement'].strip():
+            print(f"DEBUG: Found reimbursement in DB: {entry['reimbursement']} for {employee_name} on day {entry['day']}")
+            employee_reimbursements[employee_name] = entry['reimbursement']
+    
+    # Apply the reimbursement values to all days for each employee
+    for employee_name, reimbursement_value in employee_reimbursements.items():
+        if employee_name in timesheet:
+            print(f"DEBUG: Applying reimbursement {reimbursement_value} for {employee_name} to all days")
+            # Apply to all days
+            for day in timesheet[employee_name]:
+                timesheet[employee_name][day]['reimbursement'] = reimbursement_value
+            
+            # Also ensure it's saved to the first day
+            first_day = days[0] if days else None
+            if first_day:
+                print(f"DEBUG: Ensuring reimbursement {reimbursement_value} is on first day {first_day}")
+                # Check if we need to save it to the database
+                try:
+                    with get_db() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            'SELECT reimbursement FROM timesheet_entries WHERE period_id = %s AND employee_name = %s AND day = %s',
+                            (period_id, employee_name, first_day)
+                        )
+                        first_day_entry = cursor.fetchone()
+                        
+                        if not first_day_entry or not first_day_entry.get('reimbursement'):
+                            print(f"DEBUG: Saving reimbursement {reimbursement_value} to first day {first_day}")
+                            save_timesheet_entry(period_id, employee_name, first_day, 'reimbursement', reimbursement_value)
+                except Exception as e:
+                    print(f"ERROR: Failed to ensure reimbursement on first day: {str(e)}")
     
     return timesheet
 
@@ -230,6 +283,7 @@ def generate_report(period_id=None):
     
     # Initialize data structures for report
     employee_total_pay = {emp['name']: 0 for emp in employees}
+    employee_reimbursements = {emp['name']: 0 for emp in employees}
     employee_pay_by_period = {emp['name']: [] for emp in employees}
     period_totals = {}
     
@@ -239,15 +293,18 @@ def generate_report(period_id=None):
         timesheet = get_timesheet(period_id)
         
         period_total = 0
+        period_reimbursement_total = 0
         period_data = {'period': period['name']}
         
         # Process each employee
         for employee in employees:
             emp_name = employee['name']
             employee_total = 0
+            employee_reimbursement = 0
             
             # Get employee data for this period
             if emp_name in timesheet:
+                # Process pay
                 for day, day_data in timesheet[emp_name].items():
                     if 'pay' in day_data and day_data['pay']:
                         try:
@@ -255,18 +312,32 @@ def generate_report(period_id=None):
                             employee_total += pay
                         except (ValueError, TypeError):
                             pass
+                
+                # Process reimbursement (only stored on first day)
+                first_day = sorted(timesheet[emp_name].keys())[0] if timesheet[emp_name] else None
+                if first_day and 'reimbursement' in timesheet[emp_name][first_day] and timesheet[emp_name][first_day]['reimbursement']:
+                    try:
+                        reimbursement = float(timesheet[emp_name][first_day]['reimbursement'])
+                        employee_reimbursement = reimbursement
+                    except (ValueError, TypeError):
+                        pass
             
             # Update totals
             employee_total_pay[emp_name] += employee_total
+            employee_reimbursements[emp_name] += employee_reimbursement
             employee_pay_by_period[emp_name].append({
                 'period': period['name'],
-                'pay': employee_total
+                'pay': employee_total,
+                'reimbursement': employee_reimbursement
             })
             
             period_data[emp_name] = employee_total
+            period_data[f"{emp_name}_reimbursement"] = employee_reimbursement
             period_total += employee_total
+            period_reimbursement_total += employee_reimbursement
         
         period_data['total'] = period_total
+        period_data['reimbursement_total'] = period_reimbursement_total
         period_totals[period['name']] = period_data
     
     # Generate visualizations
@@ -311,6 +382,7 @@ def generate_report(period_id=None):
     return {
         'report_id': report_id,
         'employee_total_pay': employee_total_pay,
+        'employee_reimbursements': employee_reimbursements,
         'employee_pay_by_period': employee_pay_by_period,
         'period_totals': period_totals,
         'active_employees': active_employees,
@@ -321,7 +393,37 @@ def generate_report(period_id=None):
 @app.route('/')
 def index():
     pay_periods = get_pay_periods()
-    return render_template('index.html', pay_periods=pay_periods)
+    employees_list = get_employees()
+    
+    # Get current period (most recent)
+    current_period = pay_periods[0] if pay_periods else None
+    
+    # Initialize stats
+    stats = {
+        'total_employees': len(employees_list),
+        'total_periods': len(pay_periods),
+        'total_entries': 0,
+        'total_regular_hours': 0,
+        'total_overtime_hours': 0
+    }
+    
+    # If there's a current period, get timesheet data
+    if current_period:
+        timesheet = get_timesheet(current_period['id'])
+        
+        # Calculate totals from timesheet entries
+        for employee_entries in timesheet.values():
+            for day_data in employee_entries.values():
+                stats['total_entries'] += 1
+                stats['total_regular_hours'] += float(day_data.get('regular_hours', 0))
+                stats['total_overtime_hours'] += float(day_data.get('overtime_hours', 0))
+    
+    return render_template('index.html', 
+                         pay_periods=pay_periods[:5],  # Show only 5 most recent pay periods
+                         current_period=current_period,
+                         employees=employees_list,
+                         stats=stats,
+                         quick_actions=True)  # Enable quick actions section
 
 @app.route('/employees')
 def employees():
@@ -500,21 +602,34 @@ def add_pay_period():
 
 @app.route('/pay-periods/delete/<period_id>', methods=['POST'])
 def delete_pay_period(period_id):
-    # Delete pay period from database
-    with get_db() as conn:
-        cursor = conn.cursor()
-        # Delete the pay period
-        cursor.execute('DELETE FROM pay_periods WHERE id = %s', (period_id,))
-        # Delete associated timesheet entries
-        cursor.execute('DELETE FROM timesheet_entries WHERE period_id = %s', (period_id,))
-        conn.commit()
+    try:
+        # Delete pay period from database
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # First, get all timesheet entries associated with this period
+            cursor.execute('SELECT id FROM timesheet_entries WHERE period_id = %s', (period_id,))
+            timesheet_entry_ids = [row['id'] for row in cursor.fetchall()]
+            
+            # Delete each timesheet entry individually
+            for entry_id in timesheet_entry_ids:
+                cursor.execute('DELETE FROM timesheet_entries WHERE id = %s', (entry_id,))
+            
+            # Now delete the pay period
+            cursor.execute('DELETE FROM pay_periods WHERE id = %s', (period_id,))
+            
+            conn.commit()
+        
+        # Delete any associated files (like Excel exports)
+        export_file = os.path.join(UPLOAD_FOLDER, f'timesheet_{period_id}.xlsx')
+        if os.path.exists(export_file):
+            os.remove(export_file)
+        
+        flash('Pay period deleted successfully', 'success')
+    except Exception as e:
+        flash(f'Error deleting pay period: {str(e)}', 'danger')
+        app.logger.error(f"Error deleting pay period: {str(e)}")
     
-    # Delete any associated files (like Excel exports)
-    export_file = os.path.join(UPLOAD_FOLDER, f'timesheet_{period_id}.xlsx')
-    if os.path.exists(export_file):
-        os.remove(export_file)
-    
-    flash('Pay period deleted successfully', 'success')
     return redirect(url_for('pay_periods'))
 
 @app.route('/timesheet/<period_id>')
@@ -599,6 +714,7 @@ def timesheet(period_id):
 
 @app.route('/timesheet/<period_id>/update', methods=['POST'])
 def update_timesheet(period_id):
+    """Route to update timesheet entries with improved error handling"""
     try:
         data = request.json
         if not data or not all(k in data for k in ('employee', 'day', 'field', 'value')):
@@ -612,7 +728,49 @@ def update_timesheet(period_id):
         
         response_data = {'success': True}
         
-        # Update the specified field
+        # Direct handling path for reimbursement
+        if field == 'reimbursement':
+            # Always use first day of the period for reimbursement
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT start_date FROM pay_periods WHERE id = %s', (period_id,))
+                period = cursor.fetchone()
+                if period:
+                    first_day = period['start_date']
+                    print(f"REIMBURSEMENT SAVE: {value} for {employee} on first day {first_day}")
+                    
+                    # Direct DB save for reimbursement
+                    try:
+                        # Check if timesheet_entries has reimbursement column
+                        try:
+                            cursor.execute("""
+                                SELECT column_name 
+                                FROM information_schema.columns 
+                                WHERE table_name='timesheet_entries' AND column_name='reimbursement'
+                            """)
+                            column_exists = cursor.fetchone() is not None
+                            
+                            if not column_exists:
+                                # Add the column if it doesn't exist
+                                cursor.execute("""
+                                    ALTER TABLE timesheet_entries
+                                    ADD COLUMN reimbursement TEXT
+                                """)
+                                conn.commit()
+                                print("Added missing reimbursement column!")
+                        except Exception as e:
+                            print(f"Error checking/adding column: {str(e)}")
+                        
+                        # Save the value
+                        from ccpayroll.database.migration import save_timesheet_entry
+                        save_timesheet_entry(period_id, employee, first_day, 'reimbursement', value)
+                        
+                        return jsonify({'success': True, 'message': 'Reimbursement value saved'})
+                    except Exception as e:
+                        print(f"REIMBURSEMENT SAVE ERROR: {str(e)}")
+                        return jsonify({'success': False, 'error': f'Failed to save reimbursement: {str(e)}'})
+        
+        # For non-reimbursement fields, continue with normal processing
         if field == 'hours' and value:
             # Get employee to check hourly rate
             employees = get_employees()
@@ -640,21 +798,24 @@ def update_timesheet(period_id):
                         
                         # Only update the pay field if not in calculate_only mode
                         if not calculate_only:
+                            from ccpayroll.database.migration import save_timesheet_entry
                             save_timesheet_entry(period_id, employee, day, 'pay', f"{pay:.2f}")
                     except (ValueError, TypeError) as e:
-                        app.logger.error(f"Error calculating pay: {str(e)}")
+                        print(f"Error calculating pay: {str(e)}")
             
             # Always update hours field unless in calculate_only mode
             if not calculate_only:
+                from ccpayroll.database.migration import save_timesheet_entry
                 save_timesheet_entry(period_id, employee, day, field, value)
         else:
             # For other fields, just update normally
-            if not calculate_only:
+            if not calculate_only and field != 'reimbursement':  # We already handled reimbursement above
+                from ccpayroll.database.migration import save_timesheet_entry
                 save_timesheet_entry(period_id, employee, day, field, value)
             
         return jsonify(response_data)
     except Exception as e:
-        app.logger.error(f"Error in update_timesheet: {str(e)}")
+        print(f"Error in update_timesheet: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/reports')
@@ -962,6 +1123,13 @@ def export_data(period_id):
             # Add total row
             data.append(['', '', '', '', '', f'{total_hours:.1f}', f'${total_pay:.2f}'])
             
+            # Add reimbursement row for non-salesperson 
+            if employee['position'] != 'salesman' and employee['name'] in timesheet_data:
+                first_day = sorted(timesheet_data[employee['name']].keys())[0]
+                reimbursement = timesheet_data[employee['name']][first_day].get('reimbursement', '')
+                if reimbursement:
+                    data.append(['REIMBURSEMENT', '', '', '', '', '', f'${reimbursement}'])
+            
             # Add empty row
             data.append([])
     
@@ -1023,6 +1191,12 @@ def export_data(period_id):
                     
                     # Add total row
                     data.append(['', '', '', '', pay_value])
+                    
+                    # Add reimbursement row for non-salesperson
+                    if employee['position'] != 'salesman' and employee['name'] in timesheet_data and first_day:
+                        reimbursement = timesheet_data[employee['name']][first_day].get('reimbursement', '')
+                        if reimbursement:
+                            data.append(['REIMBURSEMENT', '', '', '', f'${reimbursement}'])
                 else:
                     # Standard hourly employees
                     header = ['DAY', 'DATE', 'PROJECT NAME', 'HOURS', 'PAY']
@@ -1057,6 +1231,13 @@ def export_data(period_id):
                     
                     # Add total row
                     data.append(['', '', '', f'{total_hours:.1f}', f'${total_pay:.2f}'])
+                    
+                    # Add reimbursement row for non-salesperson
+                    if employee['position'] != 'salesman' and employee['name'] in timesheet_data:
+                        first_day = sorted(timesheet_data[employee['name']].keys())[0]
+                        reimbursement = timesheet_data[employee['name']][first_day].get('reimbursement', '')
+                        if reimbursement:
+                            data.append(['REIMBURSEMENT', '', '', '', f'${reimbursement}'])
                 
                 # Add empty row
                 data.append([])
@@ -1240,10 +1421,15 @@ def migrate_json_to_db():
                     with open(os.path.join(DATA_FOLDER, filename), 'r') as f:
                         timesheet_data = json.load(f)
                         
+                        # Valid timesheet fields
+                        valid_fields = ['hours', 'pay', 'project_name', 'install_days', 'install', 
+                                      'regular_hours', 'overtime_hours', 'job_name', 'notes', 'reimbursement']
+                        
                         for employee_name, days in timesheet_data.items():
                             for day, data in days.items():
                                 for field, value in data.items():
-                                    if value:  # Only save non-empty values
+                                    # Only save valid fields with non-empty values
+                                    if value and field in valid_fields:
                                         save_timesheet_entry(period_id, employee_name, day, field, value)
                     
                     app.logger.info(f"Migrated timesheet {filename} to database")

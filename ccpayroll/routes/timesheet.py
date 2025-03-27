@@ -67,6 +67,7 @@ def save():
     project_name = data.get('project_name', '')
     install_days = data.get('install_days', '')
     install = data.get('install', '')
+    reimbursement = data.get('reimbursement', '')
     
     # Validate required fields
     if not all([period_id, employee_id, day]):
@@ -87,6 +88,7 @@ def save():
         entry.project_name = project_name
         entry.install_days = install_days
         entry.install = install
+        entry.reimbursement = reimbursement
     else:
         # Create new entry
         entry = TimesheetEntry(
@@ -97,7 +99,8 @@ def save():
             pay=pay,
             project_name=project_name,
             install_days=install_days,
-            install=install
+            install=install,
+            reimbursement=reimbursement
         )
     
     # Save to database

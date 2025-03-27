@@ -22,13 +22,13 @@
     <header>
         <div class="container">
             <nav class="nav">
-                <a href="{{ url_for('main.index') }}" class="nav-brand">Creative Closets Payroll</a>
+                <a href="{{ url_for('index') }}" class="nav-brand">Creative Closets Payroll</a>
                 <ul class="nav-links">
-                    <li><a href="{{ url_for('main.index') }}">Dashboard</a></li>
-                    <li><a href="{{ url_for('employees.index') }}">Employees</a></li>
-                    <li><a href="{{ url_for('pay_periods.index') }}">Pay Periods</a></li>
-                    <li><a href="{{ url_for('timesheet.index') }}">Timesheets</a></li>
-                    <li><a href="{{ url_for('reports.index') }}">Reports</a></li>
+                    <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+                    <li><a href="{{ url_for('employees') }}">Employees</a></li>
+                    <li><a href="{{ url_for('pay_periods') }}">Pay Periods</a></li>
+                    <li><a href="{{ url_for('timesheet', period_id='') }}">Timesheets</a></li>
+                    <li><a href="{{ url_for('reports') }}">Reports</a></li>
                 </ul>
             </nav>
         </div>
@@ -57,11 +57,11 @@
                     Creative Closets Payroll
                 </div>
                 <ul class="footer-links">
-                    <li><a href="{{ url_for('main.index') }}">Dashboard</a></li>
-                    <li><a href="{{ url_for('employees.index') }}">Employees</a></li>
-                    <li><a href="{{ url_for('pay_periods.index') }}">Pay Periods</a></li>
-                    <li><a href="{{ url_for('timesheet.index') }}">Timesheets</a></li>
-                    <li><a href="{{ url_for('reports.index') }}">Reports</a></li>
+                    <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+                    <li><a href="{{ url_for('employees') }}">Employees</a></li>
+                    <li><a href="{{ url_for('pay_periods') }}">Pay Periods</a></li>
+                    <li><a href="{{ url_for('timesheet', period_id='') }}">Timesheets</a></li>
+                    <li><a href="{{ url_for('reports') }}">Reports</a></li>
                 </ul>
             </div>
             <div class="copyright">

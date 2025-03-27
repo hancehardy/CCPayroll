@@ -50,7 +50,7 @@ class PayPeriod:
         """Get a pay period by ID"""
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT * FROM pay_periods WHERE id = ?', (period_id,))
+            cursor.execute('SELECT * FROM pay_periods WHERE id = %s', (period_id,))
             row = cursor.fetchone()
         
         return cls.from_dict(dict(row)) if row else None
@@ -60,7 +60,14 @@ class PayPeriod:
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'INSERT OR REPLACE INTO pay_periods (id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
+                '''
+                INSERT INTO pay_periods (id, name, start_date, end_date) 
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    start_date = EXCLUDED.start_date,
+                    end_date = EXCLUDED.end_date
+                ''',
                 (self.id, self.name, self.start_date, self.end_date)
             )
             conn.commit()
@@ -68,12 +75,24 @@ class PayPeriod:
     def delete(self) -> None:
         """Delete this pay period and all associated timesheet entries"""
         with get_db() as conn:
-            cursor = conn.cursor()
-            # Delete associated timesheet entries
-            cursor.execute('DELETE FROM timesheet_entries WHERE period_id = ?', (self.id,))
-            # Delete the pay period
-            cursor.execute('DELETE FROM pay_periods WHERE id = ?', (self.id,))
-            conn.commit()
+            try:
+                cursor = conn.cursor()
+                
+                # First, get all timesheet entries associated with this period
+                cursor.execute('SELECT id FROM timesheet_entries WHERE period_id = %s', (self.id,))
+                timesheet_entry_ids = [row['id'] for row in cursor.fetchall()]
+                
+                # Delete each timesheet entry individually
+                for entry_id in timesheet_entry_ids:
+                    cursor.execute('DELETE FROM timesheet_entries WHERE id = %s', (entry_id,))
+                
+                # Now delete the pay period
+                cursor.execute('DELETE FROM pay_periods WHERE id = %s', (self.id,))
+                
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                raise Exception(f"Failed to delete pay period: {str(e)}")
     
     def get_days(self) -> List[Dict[str, str]]:
         """Get all days in this pay period as a list of day objects"""

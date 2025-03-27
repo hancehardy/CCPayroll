@@ -214,7 +214,7 @@ def migrate_timesheet_entries(sqlite_conn, pg_conn):
     # Get all timesheet entries from SQLite
     sqlite_cursor.execute("""
         SELECT period_id, employee_name, day, hours, pay, project_name, 
-               install_days, install, regular_hours, overtime_hours, job_name, notes 
+               install_days, install, regular_hours, overtime_hours, job_name, notes, reimbursement 
         FROM timesheet_entries
     """)
     entries = sqlite_cursor.fetchall()
@@ -228,11 +228,12 @@ def migrate_timesheet_entries(sqlite_conn, pg_conn):
         pg_cursor.execute(
             """INSERT INTO timesheet_entries 
                (period_id, employee_name, day, hours, pay, project_name, 
-                install_days, install, regular_hours, overtime_hours, job_name, notes) 
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                install_days, install, regular_hours, overtime_hours, job_name, notes, reimbursement) 
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (entry['period_id'], entry['employee_name'], entry['day'], entry['hours'], 
              entry['pay'], entry['project_name'], entry['install_days'], entry['install'], 
-             entry['regular_hours'], entry['overtime_hours'], entry['job_name'], entry['notes'])
+             entry['regular_hours'], entry['overtime_hours'], entry['job_name'], entry['notes'],
+             entry.get('reimbursement', ''))
         )
     
     pg_conn.commit()

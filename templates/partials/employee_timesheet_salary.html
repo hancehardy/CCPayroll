@@ -7,8 +7,6 @@
                 <tr>
                     <th>Period</th>
                     <th>Pay Type</th>
-                    <th>PROJECT NAME</th>
-                    <th>HOURS</th>
                     <th>PAY</th>
                 </tr>
             </thead>
@@ -17,28 +15,6 @@
                     <td>{{ period.name }}</td>
                     <td>
                         <span class="badge bg-info">Salary</span>
-                    </td>
-                    <td>
-                        <input type="text" 
-                               class="form-control form-control-sm project-input" 
-                               data-employee="{{ employee.name }}" 
-                               data-day="{{ days[0].date }}" 
-                               data-field="project_name"
-                               value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].project_name }}{% endif %}">
-                    </td>
-                    <td>
-                        <input type="number" 
-                               class="form-control form-control-sm hours-input" 
-                               data-employee="{{ employee.name }}" 
-                               data-day="{{ days[0].date }}" 
-                               data-field="hours"
-                               step="0.5" 
-                               min="0"
-                               {% if employee.salary %}
-                               placeholder="Salaried"
-                               readonly
-                               {% endif %}
-                               value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].hours }}{% endif %}">
                     </td>
                     <td>
                         <div class="input-group">
@@ -55,9 +31,24 @@
                     </td>
                 </tr>
                 <tr>
-                    <td colspan="3" class="text-end fw-bold">TOTAL</td>
-                    <td class="employee-hours-total"></td>
+                    <td colspan="2" class="text-end fw-bold">TOTAL</td>
                     <td class="employee-pay-total"></td>
+                </tr>
+                <tr class="bg-light">
+                    <td colspan="2" class="text-end fw-bold">REIMBURSEMENT</td>
+                    <td>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" 
+                                   class="form-control form-control-sm reimbursement-input" 
+                                   data-employee="{{ employee.name }}" 
+                                   data-day="{{ days[0].date }}" 
+                                   data-field="reimbursement"
+                                   step="0.01" 
+                                   min="0" 
+                                   value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].reimbursement }}{% endif %}">
+                        </div>
+                    </td>
                 </tr>
             </tbody>
         </table>

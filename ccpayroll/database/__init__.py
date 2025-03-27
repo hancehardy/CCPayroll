@@ -143,6 +143,7 @@ def init_db():
             overtime_hours REAL DEFAULT 0,
             job_name TEXT,
             notes TEXT,
+            reimbursement TEXT,
             FOREIGN KEY (period_id) REFERENCES pay_periods(id),
             UNIQUE (period_id, employee_name, day)
         )

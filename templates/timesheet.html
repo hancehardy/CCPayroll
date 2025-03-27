@@ -2,6 +2,23 @@
 
 {% block title %}Timesheet - {{ period.name }} - Creative Closets Payroll{% endblock %}
 
+{% block styles %}
+<style>
+    /* Salesperson timesheet styles */
+    .salesman-entry td {
+        vertical-align: middle;
+    }
+    
+    .add-salesman-entry {
+        width: 100%;
+    }
+    
+    .remove-salesman-entry {
+        width: 100%;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row">
     <div class="col-md-12">
@@ -125,6 +142,22 @@
                                                 <td class="employee-hours-total"></td>
                                                 <td class="employee-pay-total"></td>
                                             </tr>
+                                            <tr class="bg-light">
+                                                <td colspan="{% if employee.position != 'assistant' %}6{% else %}4{% endif %}" class="text-end fw-bold">REIMBURSEMENT</td>
+                                                <td colspan="2">
+                                                    <div class="input-group">
+                                                        <span class="input-group-text">$</span>
+                                                        <input type="number" 
+                                                               class="form-control form-control-sm reimbursement-input" 
+                                                               data-employee="{{ employee.name }}" 
+                                                               data-day="{{ days[0].date }}" 
+                                                               data-field="reimbursement"
+                                                               step="0.01" 
+                                                               min="0" 
+                                                               value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].reimbursement }}{% endif %}">
+                                                    </div>
+                                                </td>
+                                            </tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -184,7 +217,7 @@
                         <h3 class="bg-dark text-white p-2">SALES</h3>
                         
                         {% for employee in position_groups.salesmen %}
-                            {% include 'partials/employee_timesheet_standard.html' %}
+                            {% include 'partials/employee_timesheet_salesman.html' %}
                         {% endfor %}
                     </div>
                 {% endif %}
@@ -208,6 +241,56 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Define days array for salesperson entry management
+        const days = [
+            {% for day in days %}
+                {
+                    day: "{{ day.day }}",
+                    date: "{{ day.date }}"
+                }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+
+        // Initialize salaried employee pay
+        document.querySelectorAll('.employee-timesheet').forEach(employeeSection => {
+            const employeeName = employeeSection.dataset.employee;
+            const isSalariedEmployee = employeeSection.querySelector('h4')?.textContent.includes('Salary:');
+            
+            if (isSalariedEmployee) {
+                const payInput = employeeSection.querySelector('.pay-input');
+                if (payInput) {
+                    const day = payInput.dataset.day;
+                    const value = payInput.value;
+                    
+                    // If no value is set, calculate and save the weekly salary
+                    if (!value) {
+                        const salaryMatch = employeeSection.querySelector('h4')?.textContent.match(/Salary: \$(\d+)/);
+                        if (salaryMatch) {
+                            const annualSalary = parseFloat(salaryMatch[1]);
+                            const weeklySalary = (annualSalary / 52).toFixed(2);
+                            
+                            // Set the value
+                            payInput.value = weeklySalary;
+                            
+                            // Save to server
+                            fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    employee: employeeName,
+                                    day: day,
+                                    field: 'pay',
+                                    value: weeklySalary
+                                }),
+                            });
+                        }
+                    }
+                }
+            }
+        });
+        
         // Set default values for salaried employees
         document.querySelectorAll('input[placeholder="Salaried"]').forEach(input => {
             if (!input.value) {
@@ -242,11 +325,45 @@
             }
         });
         
+        // ENHANCED: Synchronize reimbursement values across all inputs for each employee
+        // First gather all unique values by employee
+        const reimbursementValues = {};
+        
+        // Scan all reimbursement inputs to find values
+        document.querySelectorAll('.reimbursement-input').forEach(input => {
+            const employee = input.dataset.employee;
+            const value = input.value;
+            
+            if (value && (!reimbursementValues[employee] || value > reimbursementValues[employee])) {
+                reimbursementValues[employee] = value;
+            }
+        });
+        
+        // Then apply the values to all inputs and save to server
+        Object.keys(reimbursementValues).forEach(employee => {
+            const value = reimbursementValues[employee];
+            console.log(`Synchronizing reimbursement value ${value} for ${employee}`);
+            
+            // Find the first day input for this employee
+            const firstDayInput = document.querySelector(`.reimbursement-input[data-employee="${employee}"]`);
+            if (firstDayInput) {
+                const day = firstDayInput.dataset.day;
+                
+                // Save to server on the first day only
+                saveTimesheet(employee, day, 'reimbursement', value);
+                
+                // Update all inputs for this employee
+                document.querySelectorAll(`.reimbursement-input[data-employee="${employee}"]`).forEach(input => {
+                    input.value = value;
+                });
+            }
+        });
+        
         // Sync project name and days from lead installers to assistant installers
         syncLeadToAssistants();
         
         // Handle input changes
-        const inputs = document.querySelectorAll('.hours-input, .pay-input, .project-input, .install-days-input, .install-input');
+        const inputs = document.querySelectorAll('.hours-input, .pay-input, .project-input, .install-days-input, .install-input, .reimbursement-input');
         inputs.forEach(input => {
             input.addEventListener('change', function() {
                 const employee = this.dataset.employee;
@@ -254,82 +371,98 @@
                 const field = this.dataset.field;
                 const value = this.value;
                 
-                // Send update to server
-                fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        employee: employee,
-                        day: day,
-                        field: field,
-                        value: value
-                    }),
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // If hours were updated and pay was calculated, update the pay field
-                        if (field === 'hours') {
-                            const payInput = document.querySelector(`.pay-input[data-employee="${employee}"][data-day="${day}"]`);
-                            if (payInput && data.pay) {
-                                payInput.value = data.pay;
+                // Special handling for reimbursement - let saveTimesheet handle it
+                if (field === 'reimbursement') {
+                    // The saveTimesheet function will make sure to use the first day
+                    saveTimesheet(employee, day, field, value);
+                    
+                    // Enhanced: Update all reimbursement inputs for this employee to have the same value
+                    document.querySelectorAll(`.reimbursement-input[data-employee="${employee}"]`).forEach(otherInput => {
+                        if (otherInput !== this) {
+                            otherInput.value = value;
+                        }
+                    });
+                    
+                    // Update totals
+                    calculateTotals();
+                } else {
+                    // For other fields, save normally
+                    fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            employee: employee,
+                            day: day,
+                            field: field,
+                            value: value
+                        }),
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // If hours were updated and pay was calculated, update the pay field
+                            if (field === 'hours') {
+                                const payInput = document.querySelector(`.pay-input[data-employee="${employee}"][data-day="${day}"]`);
+                                if (payInput && data.pay) {
+                                    payInput.value = data.pay;
+                                }
+                                
+                                // If the employee is an assistant installer, update the assistant pay display
+                                if (isAssistantInstaller(employee)) {
+                                    updateAssistantPay(day);
+                                    // Also update lead installer pay since it depends on assistant pay
+                                    setTimeout(() => {
+                                        updateLeadInstallerPay(day);
+                                    }, 500); // Small delay to ensure assistant pay is calculated first
+                                }
+                                // If the employee is a lead installer, recalculate pay with the formula
+                                else if (isLeadInstaller(employee)) {
+                                    updateLeadInstallerPay(day);
+                                }
                             }
                             
-                            // If the employee is an assistant installer, update the assistant pay display
-                            if (isAssistantInstaller(employee)) {
-                                updateAssistantPay(day);
-                                // Also update lead installer pay since it depends on assistant pay
-                                setTimeout(() => {
-                                    updateLeadInstallerPay(day);
-                                }, 500); // Small delay to ensure assistant pay is calculated first
+                            // If project name or install days were updated by a lead installer, update assistant installers
+                            if ((field === 'project_name' || field === 'install_days') && isLeadInstaller(employee)) {
+                                // Get the crew number of this lead installer
+                                const leadElm = document.querySelector(`[data-employee="${employee}"]`);
+                                if (leadElm) {
+                                    const crewNum = leadElm.dataset.crew;
+                                    
+                                    // Update all assistant installers in the same crew
+                                    document.querySelectorAll(`[data-role="assistant"][data-crew="${crewNum}"]`).forEach(assistantElm => {
+                                        const assistantName = assistantElm.dataset.employee;
+                                        
+                                        // Update the corresponding field
+                                        const assistantInput = document.querySelector(`.${field}-input[data-employee="${assistantName}"][data-day="${day}"]`);
+                                        if (assistantInput) {
+                                            // Only update if the assistant doesn't have a value or if we're syncing the crew
+                                            if (!assistantInput.value || assistantInput.value !== value) {
+                                                assistantInput.value = value;
+                                                
+                                                // Save directly instead of triggering change event to avoid loops
+                                                saveTimesheet(assistantName, day, field, value);
+                                            }
+                                        }
+                                    });
+                                }
                             }
-                            // If the employee is a lead installer, recalculate pay with the formula
-                            else if (isLeadInstaller(employee)) {
+                            
+                            // If install amount was updated, calculate and display assistant pay
+                            if (field === 'install') {
+                                // Only need to update lead pay since assistant pay is now based on hours, not install amount
                                 updateLeadInstallerPay(day);
                             }
+                            
+                            // Update totals
+                            calculateTotals();
                         }
-                        
-                        // If project name or install days were updated by a lead installer, update assistant installers
-                        if ((field === 'project_name' || field === 'install_days') && isLeadInstaller(employee)) {
-                            // Get the crew number of this lead installer
-                            const leadElm = document.querySelector(`[data-employee="${employee}"]`);
-                            if (leadElm) {
-                                const crewNum = leadElm.dataset.crew;
-                                
-                                // Update all assistant installers in the same crew
-                                document.querySelectorAll(`[data-role="assistant"][data-crew="${crewNum}"]`).forEach(assistantElm => {
-                                    const assistantName = assistantElm.dataset.employee;
-                                    
-                                    // Update the corresponding field
-                                    const assistantInput = document.querySelector(`.${field}-input[data-employee="${assistantName}"][data-day="${day}"]`);
-                                    if (assistantInput) {
-                                        // Only update if the assistant doesn't have a value or if we're syncing the crew
-                                        if (!assistantInput.value || assistantInput.value !== value) {
-                                            assistantInput.value = value;
-                                            
-                                            // Save directly instead of triggering change event to avoid loops
-                                            saveTimesheet(assistantName, day, field, value);
-                                        }
-                                    }
-                                });
-                            }
-                        }
-                        
-                        // If install amount was updated, calculate and display assistant pay
-                        if (field === 'install') {
-                            // Only need to update lead pay since assistant pay is now based on hours, not install amount
-                            updateLeadInstallerPay(day);
-                        }
-                        
-                        // Update totals
-                        calculateTotals();
-                    }
-                })
-                .catch(error => {
-                    console.error('Error updating timesheet:', error);
-                });
+                    })
+                    .catch(error => {
+                        console.error('Error updating timesheet:', error);
+                    });
+                }
             });
         });
         
@@ -343,6 +476,196 @@
         setTimeout(() => {
             updateAllLeadInstallerPay();
         }, 1000); // Give time for assistant pay API calls to complete
+        
+        // Salesperson entry management
+        // Add new salesperson entry 
+        document.querySelectorAll('.add-salesman-entry').forEach(button => {
+            button.addEventListener('click', function() {
+                console.log('Add salesman entry button clicked');
+                const salesmanSection = this.closest('.employee-timesheet');
+                console.log('Found salesman section:', salesmanSection);
+                const employeeName = salesmanSection.dataset.employee;
+                console.log('Employee name:', employeeName);
+                const entriesContainer = salesmanSection.querySelector('.salesman-entries');
+                console.log('Found entries container:', entriesContainer);
+                const lastEntry = entriesContainer.querySelector('.salesman-entry:last-of-type');
+                console.log('Last entry:', lastEntry);
+                
+                if (!lastEntry) {
+                    console.error('No existing salesman-entry found to clone');
+                    return;
+                }
+                
+                const newEntry = lastEntry.cloneNode(true);
+                console.log('Created new entry clone');
+                
+                // Generate a new date that's not currently used
+                const usedDates = Array.from(entriesContainer.querySelectorAll('.salesman-entry')).map(entry => entry.dataset.date);
+                console.log('Used dates:', usedDates);
+                console.log('Available days:', days);
+                let newDate = '';
+                for (let i = 0; i < days.length; i++) {
+                    if (!usedDates.includes(days[i].date)) {
+                        newDate = days[i].date;
+                        break;
+                    }
+                }
+                
+                // If all dates are used, use the first date but with a unique identifier
+                if (!newDate) {
+                    newDate = days[0].date + '-' + new Date().getTime();
+                }
+                console.log('Selected new date:', newDate);
+                
+                // Update the data attributes
+                newEntry.dataset.date = newDate;
+                
+                // Clear the input values
+                newEntry.querySelector('.project-input').value = '';
+                newEntry.querySelector('.pay-input').value = '';
+                
+                // Update the data attributes for the inputs
+                newEntry.querySelector('.project-input').dataset.day = newDate;
+                newEntry.querySelector('.pay-input').dataset.day = newDate;
+                
+                // Show the remove button
+                const removeButton = newEntry.querySelector('.remove-salesman-entry');
+                removeButton.style.display = 'inline-block';
+                
+                // Append the new entry to the tbody
+                entriesContainer.appendChild(newEntry);
+                console.log('Appended new entry to tbody');
+                
+                // Add event listener for the new remove button
+                removeButton.addEventListener('click', handleRemoveSalesmanEntry);
+                
+                // Add event listeners for the new inputs
+                setupInputListeners(newEntry);
+                
+                // Update totals
+                updateEmployeeTotals(employeeName);
+                console.log('Completed adding new entry');
+            });
+        });
+        
+        // Remove salesperson entry
+        const handleRemoveSalesmanEntry = function() {
+            console.log('Remove button clicked');
+            const row = this.closest('.salesman-entry');
+            console.log('Found row to remove:', row);
+            const employeeName = row.closest('.employee-timesheet').dataset.employee;
+            const date = row.dataset.date;
+            
+            // Remove the entry from the server
+            fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    employee: employeeName,
+                    day: date,
+                    field: 'project_name',
+                    value: '' // Empty value to clear the entry
+                })
+            }).then(response => response.json())
+              .then(data => {
+                  if (data.success) {
+                      // Remove the row from the DOM
+                      row.remove();
+                      console.log('Row removed from DOM');
+                      
+                      // Update totals
+                      updateEmployeeTotals(employeeName);
+                  }
+              })
+              .catch(error => console.error('Error:', error));
+        };
+        
+        // Setup event listeners for existing remove buttons
+        document.querySelectorAll('.remove-salesman-entry').forEach(button => {
+            if (button.style.display !== 'none') {
+                button.addEventListener('click', handleRemoveSalesmanEntry);
+            }
+        });
+        
+        // Setup input listeners for saving data
+        const setupInputListeners = function(container) {
+            const inputs = container.querySelectorAll('input');
+            inputs.forEach(input => {
+                input.addEventListener('change', function() {
+                    const employee = this.dataset.employee;
+                    const day = this.dataset.day;
+                    const field = this.dataset.field;
+                    const value = this.value;
+                    
+                    // Save to server
+                    fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            employee: employee,
+                            day: day,
+                            field: field,
+                            value: value
+                        })
+                    }).then(response => response.json())
+                      .then(data => {
+                          if (data.success) {
+                              updateEmployeeTotals(employee);
+                          }
+                      })
+                      .catch(error => console.error('Error:', error));
+                });
+            });
+        };
+        
+        // Initialize input listeners for all salesperson entries
+        document.querySelectorAll('.salesman-entry').forEach(entry => {
+            setupInputListeners(entry);
+        });
+
+        // Function to update employee totals
+        const updateEmployeeTotals = function(employeeName) {
+            const employeeSection = document.querySelector(`.employee-timesheet[data-employee="${employeeName}"]`);
+            if (!employeeSection) return;
+            
+            // For salesperson, calculate totals from all entries
+            if (employeeSection.querySelector('.salesman-entries')) {
+                let totalPay = 0;
+                
+                // Calculate total pay
+                employeeSection.querySelectorAll('.pay-input').forEach(input => {
+                    const pay = parseFloat(input.value) || 0;
+                    totalPay += pay;
+                });
+                
+                // Update totals display
+                const payTotalCell = employeeSection.querySelector('tfoot .employee-pay-total');
+                if (payTotalCell) {
+                    payTotalCell.textContent = '$' + totalPay.toFixed(2);
+                }
+            } else {
+                // For non-salespeople, use the existing API
+                fetch(`/timesheet/api/totals/{{ period.id }}/${employeeName}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const hoursTotalCell = employeeSection.querySelector('.employee-hours-total');
+                        const payTotalCell = employeeSection.querySelector('.employee-pay-total');
+                        
+                        if (hoursTotalCell) {
+                            hoursTotalCell.textContent = data.total_hours.hours;
+                        }
+                        
+                        if (payTotalCell) {
+                            payTotalCell.textContent = '$' + data.total_hours.pay;
+                        }
+                    })
+                    .catch(error => console.error('Error:', error));
+            }
+        };
     });
     
     // Check if an employee is a lead installer
@@ -417,19 +740,81 @@
     
     // Helper function to save timesheet data to the server
     function saveTimesheet(employee, day, field, value) {
+        // For reimbursement fields, always use the first day of the period
+        // This ensures consistency when retrieving values
+        const firstDay = '{{ days[0].date }}';
+        
+        // Special handling for reimbursement
+        if (field === 'reimbursement') {
+            day = firstDay; // Always use first day for reimbursement
+            console.log(`REIMBURSEMENT: Saving ${value} for ${employee} on first day ${day}`);
+            
+            // Direct fetch approach for reimbursement to ensure it saves properly
             fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                employee: employee,
+                    employee: employee,
                     day: day,
+                    field: 'reimbursement',
+                    value: value
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(`REIMBURSEMENT SAVE RESULT:`, data);
+                
+                if (data.success) {
+                    // Update all inputs for this employee to maintain UI consistency
+                    document.querySelectorAll(`.reimbursement-input[data-employee="${employee}"]`).forEach(input => {
+                        input.value = value;
+                    });
+                    
+                    // Removing the page reload to prevent infinite reload loops
+                    // Just show a success message instead
+                    console.log("Reimbursement value saved successfully");
+                } else {
+                    alert(`Failed to save reimbursement value. Please try again. Error: ${data.error || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                console.error(`REIMBURSEMENT ERROR: ${error}`);
+                alert(`Error saving reimbursement value. Please try again. Error: ${error.message}`);
+            });
+            
+            return; // Exit early for reimbursement fields - handled specially above
+        }
+        
+        // For non-reimbursement fields
+        return fetch('{{ url_for("update_timesheet", period_id=period.id) }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                employee: employee,
+                day: day,
                 field: field,
                 value: value
             }),
-        }).catch(error => {
-            console.error('Error updating timesheet:', error);
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                return true;
+            } else {
+                console.error(`Error saving ${field} for ${employee} on day ${day}:`, data.error);
+                return false;
+            }
+        })
+        .catch(error => {
+            console.error(`Error updating timesheet ${field} for ${employee}:`, error);
+            return false;
         });
     }
     
@@ -596,11 +981,11 @@
     }
     
     // Calculate totals for each employee
-        function calculateTotals() {
+    function calculateTotals() {
         document.querySelectorAll('.employee-timesheet').forEach(employeeSection => {
-                let totalHours = 0;
-                let totalPay = 0;
-                
+            let totalHours = 0;
+            let totalPay = 0;
+            
             // Get all hours inputs for this employee
             employeeSection.querySelectorAll('.hours-input').forEach(hoursInput => {
                 if (hoursInput.value) {
@@ -618,15 +1003,15 @@
             // Update total displays
             const hoursTotal = employeeSection.querySelector('.employee-hours-total');
             const payTotal = employeeSection.querySelector('.employee-pay-total');
-                
-                if (hoursTotal) {
-                    hoursTotal.textContent = totalHours.toFixed(1);
-                }
-                
-                if (payTotal) {
+            
+            if (hoursTotal) {
+                hoursTotal.textContent = totalHours.toFixed(1);
+            }
+            
+            if (payTotal) {
                 payTotal.textContent = `$${totalPay.toFixed(2)}`;
-                }
-            });
-        }
+            }
+        });
+    }
 </script>
 {% endblock %} 

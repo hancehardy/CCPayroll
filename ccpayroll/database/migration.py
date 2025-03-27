@@ -83,7 +83,9 @@ def try_migrate_timesheets(data_folder):
             for employee_name, days in timesheet_data.items():
                 for day, data in days.items():
                     for field, value in data.items():
-                        if value:  # Only save non-empty values
+                        # Only save valid fields with non-empty values
+                        if value and field in ['hours', 'pay', 'project_name', 'install_days', 'install', 
+                                              'regular_hours', 'overtime_hours', 'job_name', 'notes', 'reimbursement']:
                             save_timesheet_entry(period_id, employee_name, day, field, value)
             
             current_app.logger.info(f"Migrated timesheet {filename} to database")
@@ -138,34 +140,99 @@ def save_employee(employee_data):
         conn.commit()
 
 def save_timesheet_entry(period_id, employee_name, day, field, value):
-    """Save a timesheet entry to the database"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        
-        # Check if the entry exists
-        cursor.execute(
-            'SELECT id FROM timesheet_entries WHERE period_id = %s AND employee_name = %s AND day = %s',
-            (period_id, employee_name, day)
-        )
-        existing = cursor.fetchone()
-        
-        if existing:
-            # Update the existing entry with the new field value
-            sql = f'UPDATE timesheet_entries SET {field} = %s WHERE id = %s'
-            cursor.execute(sql, (value, existing['id']))
-        else:
-            # Create a new entry with this field set
-            # Set all fields except the one being updated to NULL
-            fields = ['period_id', 'employee_name', 'day', field]
-            values = [period_id, employee_name, day, value]
+    """Save a timesheet entry to the database with improved reimbursement handling"""
+    # Make sure the field is valid for a timesheet entry
+    valid_fields = ['hours', 'pay', 'project_name', 'install_days', 'install', 
+                    'regular_hours', 'overtime_hours', 'job_name', 'notes', 'reimbursement']
+    
+    if field not in valid_fields:
+        current_app.logger.warning(f"Attempt to save invalid field '{field}' to timesheet entry")
+        return False
+    
+    # Special handling for reimbursement field
+    is_reimbursement = (field == 'reimbursement')
+    if is_reimbursement:
+        print(f"==== SAVING REIMBURSEMENT: {value} for {employee_name} on {day} ====")
+    
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
             
-            placeholders = ', '.join(['%s'] * len(fields))
-            fields_str = ', '.join(fields)
+            # Check if the entry exists
+            cursor.execute(
+                'SELECT id FROM timesheet_entries WHERE period_id = %s AND employee_name = %s AND day = %s',
+                (period_id, employee_name, day)
+            )
+            existing = cursor.fetchone()
             
-            sql = f'INSERT INTO timesheet_entries ({fields_str}) VALUES ({placeholders})'
-            cursor.execute(sql, values)
-        
-        conn.commit()
+            if existing:
+                # Get the existing ID correctly regardless of return format
+                existing_id = existing['id'] if isinstance(existing, dict) else existing[0]
+                
+                # Update the existing entry with the new field value
+                if is_reimbursement:
+                    # For reimbursement, use a direct SQL update with explicit parameters
+                    sql = "UPDATE timesheet_entries SET reimbursement = %s WHERE id = %s"
+                    print(f"==== UPDATING EXISTING ENTRY: ID {existing_id} with reimbursement {value} ====")
+                else:
+                    sql = f'UPDATE timesheet_entries SET {field} = %s WHERE id = %s'
+                
+                cursor.execute(sql, (value, existing_id))
+                
+                if is_reimbursement:
+                    print(f"==== UPDATE COMPLETE ====")
+            else:
+                # Create a new entry with this field set
+                if is_reimbursement:
+                    print(f"==== CREATING NEW ENTRY for {employee_name} on {day} with reimbursement {value} ====")
+                    
+                    # For reimbursement, always create a full entry with explicit field
+                    cursor.execute(
+                        '''INSERT INTO timesheet_entries 
+                           (period_id, employee_name, day, reimbursement) 
+                           VALUES (%s, %s, %s, %s)''',
+                        (period_id, employee_name, day, value)
+                    )
+                    print(f"==== INSERT COMPLETE ====")
+                else:
+                    # For other fields, use the dynamic approach
+                    fields = ['period_id', 'employee_name', 'day', field]
+                    values = [period_id, employee_name, day, value]
+                    
+                    placeholders = ', '.join(['%s'] * len(fields))
+                    fields_str = ', '.join(fields)
+                    
+                    sql = f'INSERT INTO timesheet_entries ({fields_str}) VALUES ({placeholders})'
+                    cursor.execute(sql, values)
+            
+            # Commit the transaction
+            conn.commit()
+            
+            # For reimbursement, verify the save
+            if is_reimbursement:
+                cursor.execute(
+                    'SELECT reimbursement FROM timesheet_entries WHERE period_id = %s AND employee_name = %s AND day = %s',
+                    (period_id, employee_name, day)
+                )
+                saved_entry = cursor.fetchone()
+                saved_value = saved_entry['reimbursement'] if isinstance(saved_entry, dict) else (saved_entry[0] if saved_entry else None)
+                
+                if saved_value == value:
+                    print(f"==== VERIFICATION SUCCESS: Reimbursement {value} saved for {employee_name} ====")
+                    return True
+                else:
+                    print(f"==== VERIFICATION FAILED: Got {saved_value} instead of {value} ====")
+                    return False
+            
+            return True
+    except Exception as e:
+        if is_reimbursement:
+            print(f"==== REIMBURSEMENT SAVE ERROR: {str(e)} ====")
+        try:
+            current_app.logger.error(f"Error saving timesheet entry: {str(e)}")
+        except:
+            print(f"Error logging exception: {str(e)}")
+        return False
 
 def migrate_database():
     """Run any necessary database migrations"""

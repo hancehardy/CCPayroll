@@ -1,0 +1,100 @@
+<div class="employee-timesheet mb-4" data-employee="{{ employee.name }}">
+    <h4 class="bg-secondary text-white p-2">{{ employee.name }}</h4>
+    
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead class="table-light">
+                <tr>
+                    <th>PAY PERIOD</th>
+                    <th>PROJECT NAME</th>
+                    <th>PAY</th>
+                    <th>ACTIONS</th>
+                </tr>
+            </thead>
+            <tbody class="salesman-entries">
+                <!-- Initial entry row -->
+                <tr class="salesman-entry" data-date="{{ days[0].date }}">
+                    <td>{{ period.name }}</td>
+                    <td>
+                        <input type="text" 
+                               class="form-control form-control-sm project-input" 
+                               data-employee="{{ employee.name }}" 
+                               data-day="{{ days[0].date }}" 
+                               data-field="project_name"
+                               value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].project_name }}{% endif %}">
+                    </td>
+                    <td>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" 
+                                   class="form-control form-control-sm pay-input" 
+                                   data-employee="{{ employee.name }}" 
+                                   data-day="{{ days[0].date }}" 
+                                   data-field="pay"
+                                   step="0.01" 
+                                   min="0" 
+                                   value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].pay }}{% endif %}">
+                        </div>
+                    </td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-danger remove-salesman-entry" style="display: none;">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                
+                <!-- Additional entries will be dynamically added here -->
+                {% for day in days[1:] %}
+                    {% if employee.name in timesheet and day.date in timesheet[employee.name] and timesheet[employee.name][day.date].project_name %}
+                    <tr class="salesman-entry" data-date="{{ day.date }}">
+                        <td>{{ period.name }}</td>
+                        <td>
+                            <input type="text" 
+                                class="form-control form-control-sm project-input" 
+                                data-employee="{{ employee.name }}" 
+                                data-day="{{ day.date }}" 
+                                data-field="project_name"
+                                value="{{ timesheet[employee.name][day.date].project_name }}">
+                        </td>
+                        <td>
+                            <div class="input-group">
+                                <span class="input-group-text">$</span>
+                                <input type="number" 
+                                    class="form-control form-control-sm pay-input" 
+                                    data-employee="{{ employee.name }}" 
+                                    data-day="{{ day.date }}" 
+                                    data-field="pay"
+                                    step="0.01" 
+                                    min="0" 
+                                    value="{{ timesheet[employee.name][day.date].pay }}">
+                            </div>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-danger remove-salesman-entry">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <!-- Add new entry row button -->
+                <tr class="bg-light">
+                    <td colspan="4" class="text-center">
+                        <button type="button" class="btn btn-sm btn-success add-salesman-entry">
+                            <i class="fas fa-plus"></i> Add Another Project
+                        </button>
+                    </td>
+                </tr>
+                
+                <!-- Totals row -->
+                <tr>
+                    <td colspan="2" class="text-end fw-bold">TOTAL</td>
+                    <td class="employee-pay-total"></td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div> 

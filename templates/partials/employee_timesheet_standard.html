@@ -55,6 +55,24 @@
                     <td class="employee-hours-total"></td>
                     <td class="employee-pay-total"></td>
                 </tr>
+                {% if employee.position != 'salesman' %}
+                <tr class="bg-light">
+                    <td colspan="3" class="text-end fw-bold">REIMBURSEMENT</td>
+                    <td colspan="2">
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" 
+                                   class="form-control form-control-sm reimbursement-input" 
+                                   data-employee="{{ employee.name }}" 
+                                   data-day="{{ days[0].date }}" 
+                                   data-field="reimbursement"
+                                   step="0.01" 
+                                   min="0" 
+                                   value="{% if employee.name in timesheet and days[0].date in timesheet[employee.name] %}{{ timesheet[employee.name][days[0].date].reimbursement }}{% endif %}">
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
             </tbody>
         </table>
     </div>
